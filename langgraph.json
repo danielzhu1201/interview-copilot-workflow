@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "interview_copilot_workflow": "./src/interview_prep/graph.py:graph"
+  },
+  "env": ".env"
+}

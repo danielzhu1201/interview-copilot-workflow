@@ -1,0 +1,72 @@
+SENIOR PRODUCT DATA ANALYST
+Harborline Health — Chicago, IL or Remote (United States)
+
+ABOUT HARBORLINE HEALTH
+
+Harborline Health is a fictional B2B healthcare software company that helps
+outpatient care teams coordinate referrals, scheduling, and patient follow-up.
+Our product organization is expanding its analytics practice so that product,
+engineering, operations, and clinical partners can make faster, evidence-based
+decisions.
+
+THE ROLE
+
+We are hiring a Senior Product Data Analyst to own analytics for our Patient
+Access product area. You will partner with a product manager, engineering lead,
+designer, and operations stakeholders. The successful candidate will convert
+ambiguous product questions into measurable hypotheses, trustworthy metrics,
+and clear recommendations.
+
+WHAT YOU WILL DO
+
+- Build reproducible analyses and decision-support datasets using advanced SQL
+  and Python.
+- Define product metrics and create self-service dashboards in Looker or a
+  comparable business intelligence platform.
+- Design and analyze A/B tests, quasi-experiments, and funnel analyses; explain
+  assumptions and limitations to non-technical partners.
+- Partner with product managers to translate ambiguous business questions into
+  measurable hypotheses and analysis plans.
+- Present recommendations to product, engineering, operations, and executive
+  stakeholders, including when the data does not support the proposed idea.
+- Improve analytics reliability through version control, peer review,
+  documentation, and automated data-quality checks.
+- Mentor analysts on experimental design, metric definition, and stakeholder
+  communication.
+
+REQUIRED QUALIFICATIONS
+
+- 5+ years of professional experience in product analytics, data analytics, or
+  a closely related role, including at least 2 years supporting a digital
+  product team.
+- Advanced SQL skills, including complex joins, window functions, and query
+  optimization on a cloud data warehouse such as BigQuery or Snowflake.
+- Proficiency in Python for analysis, automation, or statistical modeling.
+- Hands-on experience designing experiments and interpreting statistical
+  results for product decisions.
+- Demonstrated ability to communicate a complex analysis as a concise business
+  recommendation for both technical and non-technical audiences.
+
+PREFERRED QUALIFICATIONS
+
+- Experience with dbt, Airflow, or another analytics engineering or workflow
+  orchestration tool.
+- Experience working with healthcare, regulated data, or privacy-sensitive
+  products.
+- Familiarity with causal inference methods beyond standard randomized tests.
+
+SUCCESS IN THE FIRST SIX MONTHS
+
+- Establish a trusted activation funnel and metric definitions for Patient
+  Access.
+- Deliver at least one experiment or quasi-experiment that changes a product
+  decision.
+- Reduce recurring manual analysis by publishing reusable datasets and
+  self-service reporting.
+
+HIRING PROCESS
+
+The interview process includes a recruiter conversation, a hiring-manager
+discussion, a practical analytics case, and a cross-functional panel. Harborline
+Health is an equal opportunity employer. This teaching example is fictional and
+does not represent a real company or open role.

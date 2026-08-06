@@ -1,0 +1,70 @@
+{
+  "role_title": "Senior Product Data Analyst",
+  "company": "Harborline Health",
+  "requirements": [
+    {
+      "requirement_id": "REQ-01",
+      "category": "experience",
+      "requirement": "Bring at least five years of relevant analytics experience, including two years supporting a digital product team.",
+      "importance": 5,
+      "requirement_type": "must_have",
+      "source_quote": "5+ years of professional experience in product analytics, data analytics, or a closely related role, including at least 2 years supporting a digital product team."
+    },
+    {
+      "requirement_id": "REQ-02",
+      "category": "technical",
+      "requirement": "Use advanced SQL on a cloud data warehouse.",
+      "importance": 5,
+      "requirement_type": "must_have",
+      "source_quote": "Advanced SQL skills, including complex joins, window functions, and query optimization on a cloud data warehouse such as BigQuery or Snowflake."
+    },
+    {
+      "requirement_id": "REQ-03",
+      "category": "technical",
+      "requirement": "Use Python for analysis, automation, or statistical modeling.",
+      "importance": 5,
+      "requirement_type": "must_have",
+      "source_quote": "Proficiency in Python for analysis, automation, or statistical modeling."
+    },
+    {
+      "requirement_id": "REQ-04",
+      "category": "analytics",
+      "requirement": "Design experiments and interpret statistical results for product decisions.",
+      "importance": 5,
+      "requirement_type": "must_have",
+      "source_quote": "Hands-on experience designing experiments and interpreting statistical results for product decisions."
+    },
+    {
+      "requirement_id": "REQ-05",
+      "category": "communication",
+      "requirement": "Turn complex analysis into concise recommendations for technical and non-technical audiences.",
+      "importance": 5,
+      "requirement_type": "must_have",
+      "source_quote": "Demonstrated ability to communicate a complex analysis as a concise business recommendation for both technical and non-technical audiences."
+    },
+    {
+      "requirement_id": "REQ-06",
+      "category": "product",
+      "requirement": "Translate ambiguous business questions into measurable hypotheses and analysis plans.",
+      "importance": 4,
+      "requirement_type": "must_have",
+      "source_quote": "Partner with product managers to translate ambiguous business questions into measurable hypotheses and analysis plans."
+    },
+    {
+      "requirement_id": "REQ-07",
+      "category": "technical",
+      "requirement": "Have experience with analytics engineering or workflow orchestration tools.",
+      "importance": 3,
+      "requirement_type": "preferred",
+      "source_quote": "Experience with dbt, Airflow, or another analytics engineering or workflow orchestration tool."
+    },
+    {
+      "requirement_id": "REQ-08",
+      "category": "domain",
+      "requirement": "Have experience with healthcare, regulated data, or privacy-sensitive products.",
+      "importance": 3,
+      "requirement_type": "preferred",
+      "source_quote": "Experience working with healthcare, regulated data, or privacy-sensitive products."
+    }
+  ]
+}

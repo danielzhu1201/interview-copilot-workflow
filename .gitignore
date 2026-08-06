@@ -1,0 +1,29 @@
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# uv-managed virtual environment
+.venv/
+
+# Python bytecode and tooling caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.coverage
+coverage.xml
+htmlcov/
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Local editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
