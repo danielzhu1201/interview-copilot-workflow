@@ -46,12 +46,7 @@ class JobRequirement(BaseModel):
 
 
 class RequirementExtraction(BaseModel):
-    """The complete structured output expected from Gemini."""
-
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    role_title: str = Field(min_length=2)
-    company: str = Field(min_length=2)
     requirements: list[JobRequirement]
 
 

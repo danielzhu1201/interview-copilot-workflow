@@ -52,8 +52,7 @@ The node should:
 4. Request structured output using `RequirementExtraction` as the response
    schema.
 5. Parse or validate the response as `RequirementExtraction`.
-6. Return a partial state update containing `role_title`, `company`, and
-   `requirements`.
+6. Return a partial state update containing `requirements`.
 
 Do not return the raw Gemini response as workflow state.
 

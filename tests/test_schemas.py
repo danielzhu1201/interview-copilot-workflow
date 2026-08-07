@@ -14,9 +14,11 @@ def test_expected_fixture_matches_the_pydantic_contract() -> None:
         (ROOT / "data" / "expected_requirements.json").read_text(encoding="utf-8")
     )
 
-    result = RequirementExtraction.model_validate(payload)
+    result = RequirementExtraction.model_validate(
+        {"requirements": payload["requirements"]}
+    )
 
-    assert result.role_title == "Senior Product Data Analyst"
+    assert set(RequirementExtraction.model_fields) == {"requirements"}
     assert len(result.requirements) == 8
 
 

@@ -4,34 +4,27 @@ from __future__ import annotations
 
 from typing import Any
 
-from .schemas import WorkflowState
+from google.genai import types
+
+from .llm import get_gemini_client, get_model_name
+from .prompts import build_extraction_prompt
+from .schemas import RequirementExtraction, WorkflowState
 from .validation import validate_requirement_set
 
 
 def extract_requirements(state: WorkflowState) -> dict[str, Any]:
-    """TODO: call Gemini and return a validated partial state update.
+    client = get_gemini_client()
+    response = client.models.generate_content(
+        model=get_model_name(),
+        contents=build_extraction_prompt(state["job_description"]),
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_json_schema=RequirementExtraction.model_json_schema(),
+        ),
+    )
+    extraction = RequirementExtraction.model_validate(response.parsed)
 
-    Complete this node in class. The intended implementation uses:
-
-    - build_extraction_prompt(state["job_description"])
-    - get_gemini_client()
-    - get_model_name()
-    - google.genai.types.GenerateContentConfig
-    - RequirementExtraction as the response schema
-
-    Return only these business-state fields:
-
-    {
-        "role_title": parsed.role_title,
-        "company": parsed.company,
-        "requirements": parsed.requirements,
-    }
-
-    Do not put the raw Gemini response in WorkflowState.
-    """
-
-    # The empty update keeps the graph runnable before the live build.
-    return {"requirements": []}
+    return {"requirements": extraction.requirements}
 
 
 def validate_requirements(state: WorkflowState) -> dict[str, Any]:

@@ -12,7 +12,9 @@ def _load_fixture() -> tuple[str, RequirementExtraction]:
     payload = json.loads(
         (ROOT / "data" / "expected_requirements.json").read_text(encoding="utf-8")
     )
-    return jd, RequirementExtraction.model_validate(payload)
+    return jd, RequirementExtraction.model_validate(
+        {"requirements": payload["requirements"]}
+    )
 
 
 def test_expected_fixture_passes_all_grounding_checks() -> None:

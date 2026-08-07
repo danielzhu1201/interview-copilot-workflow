@@ -17,7 +17,9 @@ def main() -> None:
     payload = json.loads(
         (DATA_DIR / "expected_requirements.json").read_text(encoding="utf-8")
     )
-    extraction = RequirementExtraction.model_validate(payload)
+    extraction = RequirementExtraction.model_validate(
+        {"requirements": payload["requirements"]}
+    )
     errors = validate_requirement_set(jd, extraction.requirements)
 
     if errors:
@@ -27,8 +29,6 @@ def main() -> None:
         raise SystemExit(1)
 
     print("Fixture validation: PASSED")
-    print(f"role: {extraction.role_title}")
-    print(f"company: {extraction.company}")
     print(f"requirements: {len(extraction.requirements)}")
 
 

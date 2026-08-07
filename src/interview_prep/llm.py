@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from functools import cache
 
 from google import genai
 from langsmith import wrappers
@@ -17,8 +17,9 @@ def get_model_name() -> str:
     return os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
 
 
-def get_gemini_client() -> Any:
-    """Create a Gemini client and make it traceable when tracing is enabled."""
+@cache
+def get_gemini_client() -> genai.Client:
+    """Return the shared traceable Gemini client."""
 
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
