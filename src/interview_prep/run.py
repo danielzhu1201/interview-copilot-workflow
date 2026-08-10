@@ -15,7 +15,7 @@ RUN_CONFIG = {"configurable": {"enable_interrupts": False}}
 
 
 def load_inputs() -> dict[str, str]:
-    """Load the mock JD and resume as the two source inputs."""
+    """Load the two fictional source documents without transforming them."""
 
     return {
         "job_description": (DATA_DIR / "mock_jd.txt").read_text(encoding="utf-8"),
@@ -41,7 +41,10 @@ def _display_event(event: dict[str, Any], final_state: dict[str, Any]) -> None:
 
 def main() -> None:
     load_environment()
-    print("Running: START → extract → validate → ready/invalid → END\n")
+    print(
+        "Running: START → validate inputs → extract → match → assess → "
+        "strategy → questions → validate → package/errors → END\n"
+    )
 
     final_state: dict[str, Any] = {}
     for event in graph.stream(
@@ -52,9 +55,12 @@ def main() -> None:
         _display_event(event, final_state)
 
     print("RESULT")
-    print(f"status: {final_state.get('status', 'unknown')}")
+    print(f"package valid: {final_state.get('package_valid', False)}")
     print(f"requirements: {len(final_state.get('requirements', []))}")
-    print(f"valid: {final_state.get('requirements_valid', False)}")
+    print(f"evidence matches: {len(final_state.get('evidence_matches', []))}")
+    print(f"focus areas: {len(final_state.get('focus_areas', []))}")
+    print(f"mock questions: {len(final_state.get('mock_questions', []))}")
+    print(f"package assembled: {final_state.get('prep_package') is not None}")
     if final_state.get("validation_errors"):
         print("validation errors:")
         for error in final_state["validation_errors"]:

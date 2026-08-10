@@ -1,1 +1,1 @@
-"""interview-copilot-workflow extraction package."""
+"""Traceable Interview Prep Workflow V1 package."""

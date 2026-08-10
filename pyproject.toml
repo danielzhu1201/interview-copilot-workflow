@@ -1,7 +1,7 @@
 [project]
 name = "interview-copilot-workflow"
 version = "0.1.0"
-description = "Interview copilot workflow with grounded Gemini extraction in LangGraph"
+description = "Traceable Interview Prep Workflow V1 built with LangGraph and Gemini"
 requires-python = ">=3.11"
 dependencies = [
     "google-genai>=1.0.0",

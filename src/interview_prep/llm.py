@@ -39,11 +39,11 @@ def get_gemini_client() -> genai.Client:
     return wrappers.wrap_gemini(
         raw_client,
         tracing_extra={
-            "tags": ["interview-prep", "requirement-extraction"],
+            "tags": ["interview-prep", "workflow-v1"],
             "metadata": {
                 "provider": "google",
                 "model": get_model_name(),
-                "teaching_slice": "extract_requirements",
+                "workflow": "interview-prep-v1",
             },
         },
     )

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from interview_prep.schemas import JobRequirement, RequirementExtraction
+from interview_prep.schemas import JobRequirement, RequirementExtraction, WorkflowState
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,3 +32,19 @@ def test_requirement_rejects_an_invalid_id() -> None:
             requirement_type="must_have",
             source_quote="Advanced SQL skills are required.",
         )
+
+
+def test_workflow_state_retains_both_raw_source_documents() -> None:
+    assert WorkflowState.__required_keys__ == {
+        "job_description",
+        "resume_text",
+        "candidate_evidence",
+        "requirements",
+        "evidence_matches",
+        "focus_areas",
+        "interview_strategy",
+        "mock_questions",
+        "prep_package",
+        "validation_errors",
+        "package_valid",
+    }

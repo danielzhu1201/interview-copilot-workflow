@@ -1,138 +1,108 @@
 # interview-copilot-workflow
 
-This package is the first executable slice of the interview-copilot-workflow:
+This package implements the fixed Interview Prep Workflow V1 from Lessons 3
+and 4:
 
 ```text
-mock JD + mock resume
-        ↓
-extract_requirements       ← complete this node in class
-        ↓
-validate_requirements      ← deterministic checks are provided
-        ↓
-valid → ready              invalid → report errors
+START
+  → validate_inputs
+  → extract_requirements
+  → match_evidence                 # Lesson 4 live build placeholder
+  → assess_gaps
+  → build_strategy
+  → generate_questions
+  → validate_package               # Lesson 4 live build placeholder
+      ├─ valid   → assemble_package
+      └─ invalid → report_errors
+  → END
 ```
 
-The extraction node is intentionally incomplete. The project still runs before
-you implement it: it follows the invalid branch and explains what is missing.
+The graph starts with only the untouched job-description and resume text. Its
+business-state snapshot retains both raw documents while later nodes add derived
+objects. Every node reads only the fields it needs and returns a partial update.
+The final package keeps stable requirement and evidence IDs so its
+recommendations and questions remain traceable.
 
-## Run from this directory
+## Set up and run
 
-Open a terminal in the directory that contains this `README.md` and
-`pyproject.toml`:
+From the directory containing this `README.md` and `pyproject.toml`:
 
 ```bash
-cd "/path/to/interview-copilot-workflow"
 uv sync
-```
-
-Create a local `.env` file from the template, then add your Gemini and
-LangSmith API keys. The application loads this file automatically at startup;
-values exported in your shell take precedence.
-
-```bash
 cp .env.example .env
 ```
 
-Configure `.env`:
+Add Gemini credentials to `.env`. LangSmith values are optional:
 
 ```dotenv
 GEMINI_API_KEY=your-gemini-key
 GEMINI_MODEL=gemini-3.5-flash-lite
 
-# Set to false or omit these three values to run without tracing.
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=your-langsmith-key
 LANGSMITH_PROJECT=interview-copilot-workflow
 ```
 
-Then run the workflow:
+Run the fictional teaching example:
 
 ```bash
 uv run interview-copilot
 ```
 
-Before the live build, the expected status is `invalid`. After the extraction
-node is implemented correctly, the expected status is `ready`.
+The CLI passes the contents of `data/mock_jd.txt` and `data/mock_resume.md`
+directly into the graph. `validate_inputs` preserves those strings and derives
+stable `EXP-##` candidate-evidence records from resume bullets. The CLI then
+streams each node update and reports whether a `PrepPackage` was assembled.
 
-## LangSmith tracing
+## Lesson 4 live-build boundaries
 
-When `LANGSMITH_TRACING=true`, the Gemini client is wrapped with LangSmith and
-each model request is traced to `LANGSMITH_PROJECT`. View the run in the
-[LangSmith dashboard](https://smith.langchain.com/). Set
-`LANGSMITH_TRACING=false` to disable trace submission. Never commit `.env` or
-place real candidate data in traced runs.
+Two nodes are intentionally safe, functional placeholders for class:
 
-## What to implement
+- `match_evidence()` currently emits one explicit `GAP` per requirement with no
+  evidence IDs. It never invents candidate support.
+- `validate_package()` currently checks only that all package sections exist and
+  that at least eight mock questions were generated.
 
-Open `src/interview_prep/nodes.py` and complete `extract_requirements()`.
-The node should:
+Replace those TODO-marked bodies during the Lesson 4 live builds. The completed
+matcher should use Gemini structured output followed by deterministic ID and
+coverage guards. The completed validator should enforce every reference,
+coverage, traceability, section, and question-count invariant.
 
-1. Read `state["job_description"]`.
-2. Build the supplied extraction prompt.
-3. Call Gemini through `get_gemini_client()`.
-4. Request structured output using `RequirementExtraction` as the response
-   schema.
-5. Parse or validate the response as `RequirementExtraction`.
-6. Return a partial state update containing `requirements`.
+The remaining Lesson 4 nodes, full graph, valid/invalid branch, source adapters,
+and package assembly are implemented.
 
-Do not return the raw Gemini response as workflow state.
+## Verification
 
-## Verify the validator without Gemini
-
-The package contains an instructor-provided expected extraction for the mock
-JD. It allows everyone to verify the deterministic validation rules even if an
-API key or quota is unavailable:
+Run the offline checks without calling Gemini:
 
 ```bash
 uv run validate-fixture
 uv run pytest
+uv run ruff check .
+uv run ruff format --check .
 ```
 
-The validator checks:
+The tests replace Gemini with schema-aware fake responses and exercise the full
+input-to-package path.
 
-- at least five and at most twelve requirements;
-- unique IDs in `REQ-01` format;
-- exact JD source quotes;
-- unique requirement statements; and
-- Pydantic field constraints.
+## LangSmith tracing
 
-## Inputs
-
-- `data/mock_jd.txt` is a fictional but realistic Senior Product Data Analyst
-  job description.
-- `data/mock_resume.md` is a fictional candidate resume with strong matches,
-  partial matches, and genuine gaps.
-- `data/expected_requirements.json` is an offline validation fixture, not the
-  answer that the live Gemini call must reproduce word for word.
-
-Use only fictional or anonymized candidate information when LangSmith tracing
-is enabled in a later lesson.
+When `LANGSMITH_TRACING=true`, the shared Gemini client is wrapped with LangSmith
+and model requests are sent to `LANGSMITH_PROJECT`. View the run in the
+[LangSmith dashboard](https://smith.langchain.com/). Set tracing to `false` to
+disable uploads. Use only fictional or anonymized candidate data in traced runs.
 
 ## Optional local LangGraph application
 
-The compiled graph is exported as `interview_prep.graph:graph`. A
-`langgraph.json` file is included for running it through a local LangGraph
-development server and LangSmith Studio. Install the development-server extra
-once:
-
-```bash
-uv add --dev "langgraph-cli[inmem]"
-```
-
-Then start the hot-reloading local server:
+The compiled graph is exported as `interview_prep.graph:graph` and registered in
+`langgraph.json`. Start the local development server with:
 
 ```bash
 uv run langgraph dev
 ```
 
-The command prints a Studio URL and serves the API at
-`http://127.0.0.1:2024`. In Studio, start a run with a JSON object containing
-only `job_description` and `resume_text`; use the contents of
-`data/mock_jd.txt` and `data/mock_resume.md` respectively. The graph creates
-the remaining fields. On Safari, or if Studio cannot reach the local server,
-run `uv run langgraph dev --tunnel` and connect using the tunnel URL it prints.
-
-The command-line workflow above is sufficient for this live build.
+Studio inputs must follow `WorkflowInput`: raw `job_description` and
+`resume_text` strings. The graph performs evidence normalization after startup.
 
 ## Documentation
 
