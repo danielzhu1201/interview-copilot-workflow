@@ -25,7 +25,10 @@ def test_extract_requirements_requests_a_json_schema_requirement_list(
     monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
     monkeypatch.setattr("interview_prep.nodes.get_model_name", lambda: "test-model")
 
-    result = extract_requirements({"job_description": "Example JD", "resume_text": ""})
+    result = extract_requirements(
+        {"job_description": "Example JD", "resume_text": ""},
+        {"configurable": {"enable_interrupts": False}},
+    )
 
     config = captured["config"]
     assert result["requirements"][0].requirement_id == "REQ-01"

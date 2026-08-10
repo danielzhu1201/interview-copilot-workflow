@@ -8,19 +8,27 @@ from functools import cache
 from google import genai
 from langsmith import wrappers
 
+from .config import load_environment
+
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 
 def get_model_name() -> str:
     """Return the model pinned for class, with an environment override."""
 
+    load_environment()
     return os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
 
 
 @cache
 def get_gemini_client() -> genai.Client:
-    """Return the shared traceable Gemini client."""
+    """Return the shared Gemini client instrumented by LangSmith.
 
+    ``wrap_gemini`` reads LANGSMITH_TRACING, LANGSMITH_API_KEY, and
+    LANGSMITH_PROJECT from the environment loaded below.
+    """
+
+    load_environment()
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError(

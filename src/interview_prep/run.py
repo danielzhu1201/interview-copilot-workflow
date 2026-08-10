@@ -6,10 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .config import load_environment
 from .graph import graph
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
+RUN_CONFIG = {"configurable": {"enable_interrupts": False}}
 
 
 def load_inputs() -> dict[str, str]:
@@ -27,16 +29,27 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Cannot serialize {type(value).__name__}")
 
 
-def main() -> None:
-    print("Running: START → extract → validate → ready/invalid → END\n")
+def _display_event(event: dict[str, Any], final_state: dict[str, Any]) -> None:
+    """Print one normal state update from the non-interactive CLI run."""
 
-    final_state: dict[str, Any] = {}
-    for event in graph.stream(load_inputs(), stream_mode="updates"):
-        node_name, update = next(iter(event.items()))
+    for node_name, update in event.items():
         final_state.update(update)
         print(f"NODE: {node_name}")
         print(json.dumps(update, indent=2, default=_json_default))
         print()
+
+
+def main() -> None:
+    load_environment()
+    print("Running: START → extract → validate → ready/invalid → END\n")
+
+    final_state: dict[str, Any] = {}
+    for event in graph.stream(
+        load_inputs(),
+        config=RUN_CONFIG,
+        stream_mode="updates",
+    ):
+        _display_event(event, final_state)
 
     print("RESULT")
     print(f"status: {final_state.get('status', 'unknown')}")

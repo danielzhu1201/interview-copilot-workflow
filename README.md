@@ -25,14 +25,27 @@ cd "/path/to/interview-copilot-workflow"
 uv sync
 ```
 
-Set your Gemini API key before running the live workflow:
+Create a local `.env` file from the template, then add your Gemini and
+LangSmith API keys. The application loads this file automatically at startup;
+values exported in your shell take precedence.
 
 ```bash
-export GEMINI_API_KEY="your-key-here"
-export GEMINI_MODEL="gemini-3.5-flash-lite"
+cp .env.example .env
 ```
 
-Then run:
+Configure `.env`:
+
+```dotenv
+GEMINI_API_KEY=your-gemini-key
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+# Set to false or omit these three values to run without tracing.
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-langsmith-key
+LANGSMITH_PROJECT=interview-copilot-workflow
+```
+
+Then run the workflow:
 
 ```bash
 uv run interview-copilot
@@ -40,6 +53,14 @@ uv run interview-copilot
 
 Before the live build, the expected status is `invalid`. After the extraction
 node is implemented correctly, the expected status is `ready`.
+
+## LangSmith tracing
+
+When `LANGSMITH_TRACING=true`, the Gemini client is wrapped with LangSmith and
+each model request is traced to `LANGSMITH_PROJECT`. View the run in the
+[LangSmith dashboard](https://smith.langchain.com/). Set
+`LANGSMITH_TRACING=false` to disable trace submission. Never commit `.env` or
+place real candidate data in traced runs.
 
 ## What to implement
 
@@ -90,7 +111,27 @@ is enabled in a later lesson.
 ## Optional local LangGraph application
 
 The compiled graph is exported as `interview_prep.graph:graph`. A
-`langgraph.json` file is included for later use with a local LangGraph server.
+`langgraph.json` file is included for running it through a local LangGraph
+development server and LangSmith Studio. Install the development-server extra
+once:
+
+```bash
+uv add --dev "langgraph-cli[inmem]"
+```
+
+Then start the hot-reloading local server:
+
+```bash
+uv run langgraph dev
+```
+
+The command prints a Studio URL and serves the API at
+`http://127.0.0.1:2024`. In Studio, start a run with a JSON object containing
+only `job_description` and `resume_text`; use the contents of
+`data/mock_jd.txt` and `data/mock_resume.md` respectively. The graph creates
+the remaining fields. On Safari, or if Studio cannot reach the local server,
+run `uv run langgraph dev --tunnel` and connect using the tunnel URL it prints.
+
 The command-line workflow above is sufficient for this live build.
 
 ## Documentation

@@ -23,7 +23,6 @@ def extract_requirements(state: WorkflowState) -> dict[str, Any]:
         ),
     )
     extraction = RequirementExtraction.model_validate(response.parsed)
-
     return {"requirements": extraction.requirements}
 
 

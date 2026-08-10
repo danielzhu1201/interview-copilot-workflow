@@ -1,4 +1,27 @@
-from interview_prep import llm
+import os
+
+from interview_prep import config, llm
+
+
+def test_load_environment_reads_dotenv_without_overriding_shell(
+    monkeypatch, tmp_path
+) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text(
+        "GEMINI_API_KEY=dotenv-key\nLANGSMITH_TRACING=true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "DOTENV_PATH", dotenv_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "shell-key")
+    config.load_environment.cache_clear()
+
+    try:
+        config.load_environment()
+    finally:
+        config.load_environment.cache_clear()
+
+    assert os.getenv("GEMINI_API_KEY") == "shell-key"
+    assert os.getenv("LANGSMITH_TRACING") == "true"
 
 
 def test_gemini_client_is_initialized_once(monkeypatch) -> None:

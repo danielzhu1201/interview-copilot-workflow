@@ -6,6 +6,9 @@
 # uv-managed virtual environment
 .venv/
 
+# Local state written by `langgraph dev`
+.langgraph_api/
+
 # Python bytecode and tooling caches
 __pycache__/
 *.py[cod]
