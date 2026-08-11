@@ -16,7 +16,7 @@ from interview_prep.nodes import (
     validate_inputs,
     validate_package,
 )
-from interview_prep.run import load_inputs
+from interview_prep.run import _display_event, load_inputs
 from interview_prep.schemas import JobRequirement
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +141,15 @@ def test_validate_inputs_returns_no_derived_state() -> None:
     )
 
     assert result == {}
+
+
+def test_display_event_handles_noop_node(capsys) -> None:
+    final_state = {"existing": "value"}
+
+    _display_event({"validate_inputs": None}, final_state)
+
+    assert final_state == {"existing": "value"}
+    assert "NODE: validate_inputs" in capsys.readouterr().out
 
 
 def test_extract_candidate_evidence_rejects_resume_without_evidence() -> None:

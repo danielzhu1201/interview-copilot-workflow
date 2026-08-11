@@ -34,8 +34,18 @@ def _display_event(event: dict[str, Any], final_state: dict[str, Any]) -> None:
     """Print one normal state update from the non-interactive CLI run."""
 
     for node_name, update in event.items():
-        final_state.update(update)
         print(f"NODE: {node_name}")
+        if update is None:
+            print("(no state update)")
+            print()
+            continue
+        if not isinstance(update, dict):
+            raise TypeError(
+                f"Expected a state-update dictionary from {node_name}; "
+                f"received {type(update).__name__}."
+            )
+
+        final_state.update(update)
         print(json.dumps(update, indent=2, default=_json_default))
         print()
 
