@@ -25,37 +25,33 @@ from .schemas import (
 
 
 def validate_inputs(state: WorkflowState) -> dict[str, Any]:
-    """Validate raw documents and derive stable candidate evidence."""
+    """Validate the two raw source documents."""
 
-    # TODO(class): simplify this node to validate the two raw documents, call
-    # resume_markdown_to_evidence(), and return only candidate_evidence. The
-    # parser already owns sequential IDs, so the duplicate-ID check is
-    # redundant; package fields should be initialized by package validation.
     job_description = state.get("job_description", "")
     resume_text = state.get("resume_text", "")
-    evidence = resume_markdown_to_evidence(resume_text) if resume_text.strip() else []
 
     errors: list[str] = []
     if not job_description.strip():
         errors.append("Job description must not be empty.")
     if not resume_text.strip():
         errors.append("Resume must not be empty.")
-    elif not evidence:
-        errors.append("Resume must contain at least one evidence item.")
-
-    evidence_ids = [item.evidence_id for item in evidence]
-    if len(evidence_ids) != len(set(evidence_ids)):
-        errors.append("Candidate evidence IDs must be unique.")
 
     if errors:
         raise ValueError("Invalid workflow input: " + " ".join(errors))
 
-    return {
-        "candidate_evidence": evidence,
-        "validation_errors": [],
-        "package_valid": False,
-        "prep_package": None,
-    }
+    return {}
+
+
+def extract_candidate_evidence(state: WorkflowState) -> dict[str, Any]:
+    """Derive stable candidate evidence from the validated resume."""
+
+    candidate_evidence = resume_markdown_to_evidence(state["resume_text"])
+    if not candidate_evidence:
+        raise ValueError(
+            "Invalid workflow input: Resume must contain at least one evidence item."
+        )
+
+    return {"candidate_evidence": candidate_evidence}
 
 
 def extract_requirements(state: WorkflowState) -> dict[str, Any]:

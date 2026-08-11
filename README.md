@@ -6,6 +6,7 @@ and 4:
 ```text
 START
   → validate_inputs
+  → extract_candidate_evidence
   → extract_requirements
   → match_evidence                 # Lesson 4 live build placeholder
   → assess_gaps
@@ -50,9 +51,10 @@ uv run interview-copilot
 ```
 
 The CLI passes the contents of `data/mock_jd.txt` and `data/mock_resume.md`
-directly into the graph. `validate_inputs` preserves those strings and derives
-stable `EXP-##` candidate-evidence records from resume bullets. The CLI then
-streams each node update and reports whether a `PrepPackage` was assembled.
+directly into the graph. `validate_inputs` checks those raw documents, then
+`extract_candidate_evidence` derives stable `EXP-##` candidate-evidence
+records from resume bullets. The CLI then streams each node update and reports
+whether a `PrepPackage` was assembled.
 
 ## Lesson 4 live-build boundaries
 

@@ -2,13 +2,17 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from interview_prep.graph import graph
 from interview_prep.nodes import (
     assess_gaps,
+    extract_candidate_evidence,
     extract_requirements,
     match_evidence,
     report_errors,
     route_after_validation,
+    validate_inputs,
     validate_package,
 )
 from interview_prep.run import load_inputs
@@ -107,6 +111,37 @@ def test_extract_requirements_requests_a_json_schema_requirement_list(
     assert result["requirements"][0].requirement_id == "REQ-01"
     assert config.response_schema is None
     assert set(config.response_json_schema["properties"]) == {"requirements"}
+
+
+def test_validate_inputs_returns_no_derived_state() -> None:
+    result = validate_inputs(
+        {
+            "job_description": "Example job description",
+            "resume_text": "## Experience\n- Built a reliable analytics pipeline.",
+        }
+    )
+
+    assert result == {}
+
+
+def test_extract_candidate_evidence_rejects_resume_without_evidence() -> None:
+    with pytest.raises(
+        ValueError, match="Resume must contain at least one evidence item"
+    ):
+        extract_candidate_evidence(
+            {
+                "resume_text": "## Experience",
+            }
+        )
+
+
+def test_extract_candidate_evidence_returns_parsed_evidence() -> None:
+    result = extract_candidate_evidence(
+        {"resume_text": "## Experience\n- Built a reliable analytics pipeline."}
+    )
+
+    assert set(result) == {"candidate_evidence"}
+    assert result["candidate_evidence"][0].evidence_id == "EXP-01"
 
 
 def test_placeholder_matching_fails_closed_and_assessment_prioritizes_gaps() -> None:
