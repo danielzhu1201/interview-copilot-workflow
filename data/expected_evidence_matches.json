@@ -1,0 +1,60 @@
+{
+  "evidence_matches": [
+    {
+      "requirement_id": "REQ-01",
+      "evidence_ids": ["EXP-01"],
+      "coverage": "PARTIAL",
+      "explanation": "The candidate owned analytics for a digital product, but the evidence record does not establish the required duration.",
+      "confidence": 0.88
+    },
+    {
+      "requirement_id": "REQ-02",
+      "evidence_ids": ["EXP-02", "EXP-04", "EXP-08"],
+      "coverage": "PARTIAL",
+      "explanation": "The candidate used SQL and BigQuery in production, but the supplied evidence does not explicitly cover complex joins, window functions, or query optimization.",
+      "confidence": 0.9
+    },
+    {
+      "requirement_id": "REQ-03",
+      "evidence_ids": ["EXP-04", "EXP-09"],
+      "coverage": "FULL",
+      "explanation": "The candidate used Python for reusable analysis pipelines, cohort analysis, forecasting, and automation.",
+      "confidence": 0.97
+    },
+    {
+      "requirement_id": "REQ-04",
+      "evidence_ids": ["EXP-03", "EXP-10"],
+      "coverage": "FULL",
+      "explanation": "The candidate designed and analyzed controlled experiments and also evaluated a phased rollout with a matched-market comparison.",
+      "confidence": 0.98
+    },
+    {
+      "requirement_id": "REQ-05",
+      "evidence_ids": ["EXP-06", "EXP-07", "EXP-12"],
+      "coverage": "FULL",
+      "explanation": "The candidate presented decision recommendations, facilitated cross-functional reviews, and mentored analysts in concise executive communication.",
+      "confidence": 0.94
+    },
+    {
+      "requirement_id": "REQ-06",
+      "evidence_ids": ["EXP-05"],
+      "coverage": "FULL",
+      "explanation": "The candidate partnered with product managers to turn broad product questions into measurable hypotheses and analysis plans.",
+      "confidence": 0.99
+    },
+    {
+      "requirement_id": "REQ-07",
+      "evidence_ids": ["EXP-04", "EXP-16"],
+      "coverage": "FULL",
+      "explanation": "The candidate used Airflow in a production analytics workflow, directly supporting the orchestration-tool preference.",
+      "confidence": 0.99
+    },
+    {
+      "requirement_id": "REQ-08",
+      "evidence_ids": ["EXP-13", "EXP-14", "EXP-17"],
+      "coverage": "PARTIAL",
+      "explanation": "The candidate handled privacy-sensitive community-service data but explicitly lacks direct healthcare and formal regulatory experience.",
+      "confidence": 0.96
+    }
+  ]
+}

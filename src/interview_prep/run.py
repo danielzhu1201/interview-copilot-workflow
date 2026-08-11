@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import load_environment
 from .graph import graph
+from .package_writer import CANDIDATE_PREP_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -61,6 +62,8 @@ def main() -> None:
     print(f"focus areas: {len(final_state.get('focus_areas', []))}")
     print(f"mock questions: {len(final_state.get('mock_questions', []))}")
     print(f"package assembled: {final_state.get('prep_package') is not None}")
+    if final_state.get("prep_package") is not None:
+        print(f"candidate prep file: {CANDIDATE_PREP_PATH}")
     if final_state.get("validation_errors"):
         print("validation errors:")
         for error in final_state["validation_errors"]:

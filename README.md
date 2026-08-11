@@ -8,11 +8,11 @@ START
   → validate_inputs
   → extract_candidate_evidence
   → extract_requirements
-  → match_evidence                 # Lesson 4 live build placeholder
+  → match_evidence
   → assess_gaps
   → build_strategy
   → generate_questions
-  → validate_package               # Lesson 4 live build placeholder
+  → validate_package
       ├─ valid   → assemble_package
       └─ invalid → report_errors
   → END
@@ -56,19 +56,25 @@ directly into the graph. `validate_inputs` checks those raw documents, then
 records from resume bullets. The CLI then streams each node update and reports
 whether a `PrepPackage` was assembled.
 
-## Lesson 4 live-build boundaries
+For a valid run, `assemble_package` writes the candidate-facing brief to
+`output/interview-prep-package.md`. It contains only preparation material:
+positioning, priorities, themes, stories, risks, and practice questions. The
+output directory is ignored because these briefs can contain candidate-specific
+information.
 
-Two nodes are intentionally safe, functional placeholders for class:
+## Lesson 4 validation
 
-- `match_evidence()` currently emits one explicit `GAP` per requirement with no
-  evidence IDs. It never invents candidate support.
-- `validate_package()` currently checks only that all package sections exist and
-  that at least eight mock questions were generated.
+`match_evidence()` is complete. It requests `EvidenceMatchList` structured
+output from Gemini, validates every requirement and evidence reference, enforces
+the FULL/PARTIAL/GAP rules, and restores requirement order before updating
+state. Quota, server, connection, and timeout failures use the validated
+`data/expected_evidence_matches.json` teaching fixture.
 
-Replace those TODO-marked bodies during the Lesson 4 live builds. The completed
-matcher should use Gemini structured output followed by deterministic ID and
-coverage guards. The completed validator should enforce every reference,
-coverage, traceability, section, and question-count invariant.
+`validate_package()` is also complete. It checks Lesson 3 source grounding,
+stable requirement and evidence references, one coverage result per requirement,
+focus-area consistency, downstream strategy/story/question evidence links, GAP
+safeguards, required sections, and the eight-question minimum. Only a valid
+package can reach `assemble_package`.
 
 The remaining Lesson 4 nodes, full graph, valid/invalid branch, source adapters,
 and package assembly are implemented.

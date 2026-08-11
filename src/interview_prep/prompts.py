@@ -47,6 +47,34 @@ JOB DESCRIPTION
 """
 
 
+def build_evidence_matching_prompt(
+    requirements: list[Any],
+    candidate_evidence: list[Any],
+) -> str:
+    """Ask Gemini to link supplied evidence without inventing support."""
+
+    return f"""Match the supplied candidate evidence to the job requirements.
+Return exactly one EvidenceMatch for every requirement_id, in requirement order.
+
+Coverage rules:
+- FULL: supplied evidence directly supports all important parts of the requirement.
+- PARTIAL: related supplied evidence exists but misses an important dimension.
+- GAP: no supplied evidence supports the requirement.
+
+Use only requirement_id and evidence_id values present below. Every FULL or
+PARTIAL match must contain at least one supporting evidence_id. Every GAP must
+have an empty evidence_ids list. Judge only the supplied claims; never infer or
+invent candidate experience. Keep each explanation concise and evidence-based.
+Return only data conforming to the response schema.
+
+REQUIREMENTS
+{_dump(requirements)}
+
+CANDIDATE EVIDENCE
+{_dump(candidate_evidence)}
+"""
+
+
 def build_strategy_prompt(
     requirements: list[Any],
     evidence_matches: list[Any],

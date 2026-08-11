@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from interview_prep.graph import graph
@@ -27,14 +28,20 @@ def _requirements_payload() -> dict:
     )
 
 
+def _evidence_matches_payload() -> dict:
+    return json.loads(
+        (ROOT / "data" / "expected_evidence_matches.json").read_text(encoding="utf-8")
+    )
+
+
 def _strategy_payload() -> dict:
     return {
         "top_priorities": [
             {
                 "requirement_id": "REQ-01",
-                "evidence_ids": [],
+                "evidence_ids": ["EXP-01"],
                 "preparation_theme": "Address the experience requirement honestly.",
-                "rationale": "The placeholder matcher currently exposes a gap.",
+                "rationale": "The supplied evidence supports digital product work.",
             }
         ],
         "positioning_statement": (
@@ -43,8 +50,8 @@ def _strategy_payload() -> dict:
         "stories_to_prepare": [
             {
                 "requirement_id": "REQ-01",
-                "evidence_ids": [],
-                "story_to_prepare": "Prepare an honest adjacent-experience example.",
+                "evidence_ids": ["EXP-01"],
+                "story_to_prepare": "Prepare the product analytics ownership story.",
             }
         ],
         "risks_to_address": [
@@ -60,13 +67,23 @@ def _strategy_payload() -> dict:
 
 
 def _questions_payload() -> dict:
+    evidence_by_requirement = {
+        1: ["EXP-01"],
+        2: ["EXP-02"],
+        3: ["EXP-04"],
+        4: ["EXP-03"],
+        5: ["EXP-06"],
+        6: ["EXP-05"],
+        7: ["EXP-04"],
+        8: ["EXP-13"],
+    }
     return {
         "mock_questions": [
             {
                 "question": f"How would you approach requirement REQ-{index:02d}?",
                 "requirement_id": f"REQ-{index:02d}",
                 "capability_tested": "Grounded communication",
-                "evidence_ids": [],
+                "evidence_ids": evidence_by_requirement[index],
                 "follow_up_probe": "What would you learn or verify next?",
                 "answer_outline": [
                     "State the relevant transferable strength.",
@@ -85,6 +102,8 @@ def _fake_client(captured: list[dict] | None = None):
         properties = set(kwargs["config"].response_json_schema["properties"])
         if properties == {"requirements"}:
             parsed = {"requirements": _requirements_payload()["requirements"]}
+        elif properties == {"evidence_matches"}:
+            parsed = _evidence_matches_payload()
         elif "top_priorities" in properties:
             parsed = _strategy_payload()
         elif properties == {"mock_questions"}:
@@ -144,31 +163,89 @@ def test_extract_candidate_evidence_returns_parsed_evidence() -> None:
     assert result["candidate_evidence"][0].evidence_id == "EXP-01"
 
 
-def test_placeholder_matching_fails_closed_and_assessment_prioritizes_gaps() -> None:
-    requirement = JobRequirement.model_validate(
-        _requirements_payload()["requirements"][0]
-    )
+def _matching_state() -> dict:
+    requirements = [
+        JobRequirement.model_validate(item)
+        for item in _requirements_payload()["requirements"]
+    ]
+    inputs = load_inputs()
+    candidate_evidence = extract_candidate_evidence(inputs)["candidate_evidence"]
+    return {
+        "requirements": requirements,
+        "candidate_evidence": candidate_evidence,
+    }
 
-    match_update = match_evidence({"requirements": [requirement]})
+
+def test_match_evidence_uses_schema_and_returns_requirement_order(monkeypatch) -> None:
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "interview_prep.nodes.get_gemini_client", lambda: _fake_client(captured)
+    )
+    monkeypatch.setattr("interview_prep.nodes.get_model_name", lambda: "test-model")
+
+    state = _matching_state()
+    result = match_evidence(state)
     focus_update = assess_gaps(
         {
-            "requirements": [requirement],
-            "evidence_matches": match_update["evidence_matches"],
+            "requirements": state["requirements"],
+            "evidence_matches": result["evidence_matches"],
         }
     )
 
-    assert match_update["evidence_matches"][0].coverage == "GAP"
-    assert match_update["evidence_matches"][0].evidence_ids == []
-    assert focus_update["focus_areas"][0].priority == requirement.importance * 3
+    config = captured[0]["config"]
+    assert set(config.response_json_schema["properties"]) == {"evidence_matches"}
+    assert [item.requirement_id for item in result["evidence_matches"]] == [
+        item.requirement_id for item in state["requirements"]
+    ]
+    assert result["evidence_matches"][0].coverage == "PARTIAL"
+    assert result["evidence_matches"][0].evidence_ids == ["EXP-01"]
+    assert focus_update["focus_areas"][0].priority == 10
+
+
+def test_match_evidence_rejects_unknown_evidence_id(monkeypatch) -> None:
+    payload = _evidence_matches_payload()
+    payload["evidence_matches"][0]["evidence_ids"] = ["EXP-99"]
+
+    def generate_content(**_kwargs):
+        return SimpleNamespace(parsed=payload)
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=generate_content)
+    )
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
+
+    with pytest.raises(ValueError, match="unknown evidence IDs: EXP-99"):
+        match_evidence(_matching_state())
+
+
+def test_match_evidence_uses_validated_fixture_on_network_failure(
+    monkeypatch,
+) -> None:
+    def generate_content(**_kwargs):
+        raise httpx.ConnectError("offline")
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=generate_content)
+    )
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
+
+    result = match_evidence(_matching_state())
+
+    assert len(result["evidence_matches"]) == 8
+    assert result["evidence_matches"][2].coverage == "FULL"
+    assert result["evidence_matches"][2].evidence_ids == ["EXP-04", "EXP-09"]
 
 
 def test_complete_graph_reaches_an_assembled_package_without_live_gemini(
     monkeypatch,
+    tmp_path,
 ) -> None:
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
     fake_client = _fake_client()
     monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
     monkeypatch.setattr("interview_prep.nodes.get_model_name", lambda: "test-model")
+    candidate_prep_path = tmp_path / "candidate-prep.md"
+    monkeypatch.setattr("interview_prep.nodes.CANDIDATE_PREP_PATH", candidate_prep_path)
 
     inputs = load_inputs()
     result = graph.invoke(inputs)
@@ -180,6 +257,54 @@ def test_complete_graph_reaches_an_assembled_package_without_live_gemini(
     assert result["validation_errors"] == []
     assert result["prep_package"] is not None
     assert len(result["prep_package"].mock_questions) == 8
+    markdown = candidate_prep_path.read_text(encoding="utf-8")
+    assert "# Next-Round Interview Prep" in markdown
+    assert "## Positioning" in markdown
+    assert "## Practice questions" in markdown
+    assert "EXP-01" not in markdown
+    assert "source_quote" not in markdown
+
+
+def test_validate_package_rejects_ungrounded_requirements_and_gap_evidence(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    fake_client = _fake_client()
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
+    monkeypatch.setattr("interview_prep.nodes.get_model_name", lambda: "test-model")
+    monkeypatch.setattr(
+        "interview_prep.nodes.CANDIDATE_PREP_PATH", tmp_path / "candidate-prep.md"
+    )
+    state = graph.invoke(load_inputs())
+
+    state["requirements"][0] = state["requirements"][0].model_copy(
+        update={"source_quote": "Unsupported robotics experience is required."}
+    )
+    state["evidence_matches"][0] = state["evidence_matches"][0].model_copy(
+        update={"coverage": "GAP", "evidence_ids": []}
+    )
+    state["focus_areas"] = [
+        item.model_copy(update={"coverage": "GAP"})
+        if item.requirement_id == "REQ-01"
+        else item
+        for item in state["focus_areas"]
+    ]
+
+    validation_update = validate_package(state)
+
+    assert validation_update["package_valid"] is False
+    assert (
+        "REQ-01 source_quote is not grounded in the JD."
+        in validation_update["validation_errors"]
+    )
+    assert (
+        "Strategy item for REQ-01 must not reference evidence for a GAP requirement."
+        in validation_update["validation_errors"]
+    )
+    assert (
+        "Mock question item for REQ-01 must not reference evidence for a GAP "
+        "requirement."
+    ) in validation_update["validation_errors"]
 
 
 def test_incomplete_package_uses_the_invalid_output_branch() -> None:

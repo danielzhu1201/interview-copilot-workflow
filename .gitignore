@@ -26,6 +26,9 @@ build/
 dist/
 *.egg-info/
 
+# Candidate-specific preparation briefs
+output/
+
 # Local editor and operating-system files
 .DS_Store
 .idea/

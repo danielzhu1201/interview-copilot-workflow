@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import Any
 
+import httpx
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from .inputs import resume_markdown_to_evidence
 from .llm import get_gemini_client, get_model_name
+from .package_writer import CANDIDATE_PREP_PATH, write_candidate_prep
 from .prompts import (
+    build_evidence_matching_prompt,
     build_extraction_prompt,
     build_questions_prompt,
     build_strategy_prompt,
 )
 from .schemas import (
-    EvidenceMatch,
+    EvidenceMatchList,
     FocusArea,
     InterviewStrategy,
     MockQuestionList,
@@ -22,6 +29,15 @@ from .schemas import (
     RequirementExtraction,
     WorkflowState,
 )
+from .validation import validate_evidence_match_set, validate_prep_package
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+EVIDENCE_MATCH_FIXTURE_PATH = PROJECT_ROOT / "data" / "expected_evidence_matches.json"
+logger = logging.getLogger(__name__)
+
+
+def _load_evidence_match_fixture() -> dict[str, Any]:
+    return json.loads(EVIDENCE_MATCH_FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 def validate_inputs(state: WorkflowState) -> dict[str, Any]:
@@ -71,25 +87,53 @@ def extract_requirements(state: WorkflowState) -> dict[str, Any]:
 
 
 def match_evidence(state: WorkflowState) -> dict[str, Any]:
-    """Return safe GAPs until the Lesson 4 matching live build is completed.
+    """Link candidate evidence to every requirement without inventing support."""
 
-    TODO(lesson-4-live-build-1): replace this fail-closed placeholder with the
-    grounded Gemini structured-output call and deterministic ID guards.
-    """
-
-    matches = [
-        EvidenceMatch(
-            requirement_id=requirement.requirement_id,
-            evidence_ids=[],
-            coverage="GAP",
-            explanation=(
-                "Evidence matching is pending; no candidate support is asserted."
+    client = get_gemini_client()
+    try:
+        response = client.models.generate_content(
+            model=get_model_name(),
+            contents=build_evidence_matching_prompt(
+                state["requirements"],
+                state["candidate_evidence"],
             ),
-            confidence=0,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_json_schema=EvidenceMatchList.model_json_schema(),
+            ),
         )
-        for requirement in state["requirements"]
+        payload = response.parsed
+    except genai_errors.APIError as error:
+        if error.code not in {408, 429} and error.code < 500:
+            raise
+        logger.warning(
+            "Gemini evidence matching failed with API status %s; using fixture.",
+            error.code,
+        )
+        payload = _load_evidence_match_fixture()
+    except (httpx.ConnectError, httpx.TimeoutException) as error:
+        logger.warning(
+            "Gemini evidence matching was unavailable (%s); using fixture.",
+            type(error).__name__,
+        )
+        payload = _load_evidence_match_fixture()
+
+    match_list = EvidenceMatchList.model_validate(payload)
+    validation_errors = validate_evidence_match_set(
+        state["requirements"],
+        state["candidate_evidence"],
+        match_list.evidence_matches,
+    )
+    if validation_errors:
+        raise ValueError("Invalid evidence matches: " + " ".join(validation_errors))
+
+    matches_by_requirement = {
+        item.requirement_id: item for item in match_list.evidence_matches
+    }
+    ordered_matches = [
+        matches_by_requirement[item.requirement_id] for item in state["requirements"]
     ]
-    return {"evidence_matches": matches}
+    return {"evidence_matches": ordered_matches}
 
 
 def assess_gaps(state: WorkflowState) -> dict[str, Any]:
@@ -161,23 +205,17 @@ def generate_questions(state: WorkflowState) -> dict[str, Any]:
 
 
 def validate_package(state: WorkflowState) -> dict[str, Any]:
-    """Temporarily check package shape until the validation live build.
+    """Apply deterministic grounding, traceability, and completeness checks."""
 
-    TODO(lesson-4-live-build-2): replace these minimal readiness checks with
-    the complete deterministic reference, coverage, and section invariants.
-    """
-
-    errors: list[str] = []
-    if not state.get("requirements"):
-        errors.append("The package has no requirements.")
-    if not state.get("evidence_matches"):
-        errors.append("The package has no evidence matches.")
-    if not state.get("focus_areas"):
-        errors.append("The package has no focus areas.")
-    if not state.get("interview_strategy"):
-        errors.append("The package has no interview strategy.")
-    if len(state.get("mock_questions", [])) < 8:
-        errors.append("The package must contain at least eight mock questions.")
+    errors = validate_prep_package(
+        job_description=state.get("job_description", ""),
+        candidate_evidence=state.get("candidate_evidence", []),
+        requirements=state.get("requirements", []),
+        evidence_matches=state.get("evidence_matches", []),
+        focus_areas=state.get("focus_areas", []),
+        interview_strategy=state.get("interview_strategy"),
+        mock_questions=state.get("mock_questions", []),
+    )
 
     return {"validation_errors": errors, "package_valid": not errors}
 
@@ -189,7 +227,7 @@ def route_after_validation(state: WorkflowState) -> str:
 
 
 def assemble_package(state: WorkflowState) -> dict[str, Any]:
-    """Assemble candidate-facing output only after validation succeeds."""
+    """Assemble and write candidate-facing output only after validation succeeds."""
 
     package = PrepPackage(
         requirements=state["requirements"],
@@ -198,6 +236,7 @@ def assemble_package(state: WorkflowState) -> dict[str, Any]:
         interview_strategy=state["interview_strategy"],
         mock_questions=state["mock_questions"],
     )
+    write_candidate_prep(package, CANDIDATE_PREP_PATH)
     return {"prep_package": package}
 
 
