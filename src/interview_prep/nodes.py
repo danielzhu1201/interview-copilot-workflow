@@ -11,7 +11,7 @@ import httpx
 from google.genai import errors as genai_errors
 from google.genai import types
 
-from .inputs import resume_markdown_to_evidence
+from .inputs import clarifications_to_evidence, resume_markdown_to_evidence
 from .llm import get_gemini_client, get_model_name
 from .package_writer import CANDIDATE_PREP_PATH, write_candidate_prep
 from .prompts import (
@@ -21,6 +21,7 @@ from .prompts import (
     build_strategy_prompt,
 )
 from .schemas import (
+    CandidateEvidence,
     EvidenceMatchList,
     FocusArea,
     InterviewStrategy,
@@ -38,6 +39,55 @@ logger = logging.getLogger(__name__)
 
 def _load_evidence_match_fixture() -> dict[str, Any]:
     return json.loads(EVIDENCE_MATCH_FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def _normalize_gap_evidence_ids(match_list: EvidenceMatchList) -> EvidenceMatchList:
+    """Conservatively remove non-supporting references from GAP matches."""
+
+    normalized_matches = []
+    for match in match_list.evidence_matches:
+        if match.coverage == "GAP" and match.evidence_ids:
+            logger.warning(
+                "Clearing evidence IDs from GAP match %s: %s",
+                match.requirement_id,
+                ", ".join(match.evidence_ids),
+            )
+            match = match.model_copy(update={"evidence_ids": []})
+        normalized_matches.append(match)
+    return EvidenceMatchList(evidence_matches=normalized_matches)
+
+
+# =============================================================================
+# LESSON 5 AGENT V1 WORKFLOW INTEGRATION
+# These helpers are the only Agent V1-specific behavior inside Workflow V1.
+# =============================================================================
+
+MOCK_JD_PATH = PROJECT_ROOT / "data" / "mock_jd.txt"
+MOCK_RESUME_PATH = PROJECT_ROOT / "data" / "mock_resume.md"
+
+
+def _can_use_evidence_match_fixture(state: WorkflowState) -> bool:
+    """Allow the static fallback only for the exact fixture it describes."""
+
+    return (
+        not state.get("candidate_clarifications")
+        and state.get("job_description") == MOCK_JD_PATH.read_text(encoding="utf-8")
+        and state.get("resume_text") == MOCK_RESUME_PATH.read_text(encoding="utf-8")
+    )
+
+
+def _append_agent_clarifications(
+    state: WorkflowState,
+    candidate_evidence: list[CandidateEvidence],
+) -> None:
+    """Append resumed answers after the evidence parsed from the original resume."""
+
+    candidate_evidence.extend(
+        clarifications_to_evidence(
+            state.get("candidate_clarifications", []),
+            starting_index=len(candidate_evidence),
+        )
+    )
 
 
 def validate_inputs(state: WorkflowState) -> dict[str, Any]:
@@ -66,6 +116,9 @@ def extract_candidate_evidence(state: WorkflowState) -> dict[str, Any]:
         raise ValueError(
             "Invalid workflow input: Resume must contain at least one evidence item."
         )
+
+    # Lesson 5 integration hook; implementation is grouped above.
+    _append_agent_clarifications(state, candidate_evidence)
 
     return {"candidate_evidence": candidate_evidence}
 
@@ -106,19 +159,23 @@ def match_evidence(state: WorkflowState) -> dict[str, Any]:
     except genai_errors.APIError as error:
         if error.code not in {408, 429} and error.code < 500:
             raise
+        if not _can_use_evidence_match_fixture(state):
+            raise
         logger.warning(
             "Gemini evidence matching failed with API status %s; using fixture.",
             error.code,
         )
         payload = _load_evidence_match_fixture()
     except (httpx.ConnectError, httpx.TimeoutException) as error:
+        if not _can_use_evidence_match_fixture(state):
+            raise
         logger.warning(
             "Gemini evidence matching was unavailable (%s); using fixture.",
             type(error).__name__,
         )
         payload = _load_evidence_match_fixture()
 
-    match_list = EvidenceMatchList.model_validate(payload)
+    match_list = _normalize_gap_evidence_ids(EvidenceMatchList.model_validate(payload))
     validation_errors = validate_evidence_match_set(
         state["requirements"],
         state["candidate_evidence"],

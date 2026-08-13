@@ -16,8 +16,9 @@ from interview_prep.nodes import (
     validate_inputs,
     validate_package,
 )
+from interview_prep.prompts import build_evidence_matching_prompt
 from interview_prep.run import _display_event, load_inputs
-from interview_prep.schemas import JobRequirement
+from interview_prep.schemas import CandidateClarification, JobRequirement
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -180,6 +181,8 @@ def _matching_state() -> dict:
     inputs = load_inputs()
     candidate_evidence = extract_candidate_evidence(inputs)["candidate_evidence"]
     return {
+        "job_description": inputs["job_description"],
+        "resume_text": inputs["resume_text"],
         "requirements": requirements,
         "candidate_evidence": candidate_evidence,
     }
@@ -225,6 +228,31 @@ def test_match_evidence_rejects_unknown_evidence_id(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="unknown evidence IDs: EXP-99"):
         match_evidence(_matching_state())
+
+
+def test_match_evidence_clears_non_supporting_ids_from_gap(monkeypatch) -> None:
+    payload = _evidence_matches_payload()
+    payload["evidence_matches"][6] = {
+        "requirement_id": "REQ-07",
+        "evidence_ids": ["EXP-13"],
+        "coverage": "GAP",
+        "explanation": "The candidate has no supporting healthcare experience.",
+        "confidence": 0.95,
+    }
+
+    def generate_content(**_kwargs):
+        return SimpleNamespace(parsed=payload)
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=generate_content)
+    )
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
+
+    result = match_evidence(_matching_state())
+
+    assert result["evidence_matches"][6].requirement_id == "REQ-07"
+    assert result["evidence_matches"][6].coverage == "GAP"
+    assert result["evidence_matches"][6].evidence_ids == []
 
 
 def test_match_evidence_uses_validated_fixture_on_network_failure(
@@ -323,3 +351,58 @@ def test_incomplete_package_uses_the_invalid_output_branch() -> None:
     assert validation_update["validation_errors"]
     assert route_after_validation(validation_update) == "invalid"
     assert report_errors(validation_update) == {"prep_package": None}
+
+
+# =============================================================================
+# LESSON 5 AGENT V1 WORKFLOW INTEGRATION TESTS
+# =============================================================================
+
+
+def test_matching_prompt_rejects_experimentation_proxy_evidence() -> None:
+    prompt = build_evidence_matching_prompt([], [])
+
+    assert "needs direct evidence of designing or analyzing an experiment" in prompt
+    assert "Forming hypotheses, defining event tracking" in prompt
+    assert "Use GAP when those proxy activities are the only related claims" in prompt
+    assert "Advanced SQL requires a direct claim of using SQL" in prompt
+    assert "Python proficiency requires a direct claim of using Python" in prompt
+
+
+def test_extract_candidate_evidence_appends_clarification_without_resume_edit() -> None:
+    resume = "## Experience\n- Built a reliable analytics pipeline."
+    result = extract_candidate_evidence(
+        {
+            "resume_text": resume,
+            "candidate_clarifications": [
+                CandidateClarification(
+                    requirement_id="REQ-04",
+                    question="What experiment did you design?",
+                    answer="I designed a controlled onboarding experiment.",
+                )
+            ],
+        }
+    )
+
+    assert resume == "## Experience\n- Built a reliable analytics pipeline."
+    assert [item.evidence_id for item in result["candidate_evidence"]] == [
+        "EXP-01",
+        "EXP-02",
+    ]
+    assert result["candidate_evidence"][1].source.endswith("REQ-04")
+
+
+def test_match_evidence_does_not_use_fixture_for_different_inputs(
+    monkeypatch,
+) -> None:
+    def generate_content(**_kwargs):
+        raise httpx.ConnectError("offline")
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=generate_content)
+    )
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
+    state = _matching_state()
+    state["resume_text"] += "\n- This makes the input different.\n"
+
+    with pytest.raises(httpx.ConnectError, match="offline"):
+        match_evidence(state)

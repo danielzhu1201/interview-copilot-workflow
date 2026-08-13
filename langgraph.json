@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "interview_copilot_workflow": "interview_prep.graph:graph"
+    "interview_copilot_workflow": "interview_prep.graph:graph",
+    "interview_copilot_agent": "interview_prep.agent:agent_graph"
   },
   "env": ".env"
 }

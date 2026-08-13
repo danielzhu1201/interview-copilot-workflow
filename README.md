@@ -1,7 +1,7 @@
 # interview-copilot-workflow
 
 This package implements the fixed Interview Prep Workflow V1 from Lessons 3
-and 4:
+and 4, plus the bounded human-in-the-loop Agent V1 from Lesson 5.
 
 ```text
 START
@@ -79,6 +79,75 @@ package can reach `assemble_package`.
 The remaining Lesson 4 nodes, full graph, valid/invalid branch, source adapters,
 and package assembly are implemented.
 
+## Lesson 5 human-in-the-loop agent
+
+`interview_copilot_agent` wraps the unchanged Workflow V1 in this resumable
+loop:
+
+```text
+OBSERVE → DECIDE → VALIDATE + ROUTE
+                     ├─ GENERATE_PREP_PACKAGE → OBSERVE
+                     ├─ ASK_USER → INTERRUPT → RESUME → OBSERVE
+                     ├─ FINISH → END
+                     └─ INVALID → END
+```
+
+Gemini proposes exactly one structured `AgentDecision`, but code derives the
+currently allowed action before the model runs. The deterministic precedence is:
+generate the first package; ask about an eligible unasked importance-4-or-5 GAP;
+regenerate after a clarification; then finish a valid package. The observation
+includes each eligible gap's requirement text and evidence explanation so Gemini
+can choose among eligible gaps and phrase a focused question.
+
+Code also enforces required ASK_USER arguments, no repeated requirement, at most
+one question, a four-action budget, and FINISH only when the package is valid and
+no eligible unasked gap remains. An unauthorized decision is returned to Gemini
+once with the code-owned error and allowed actions; a second invalid decision
+stops safely. Decision retries do not consume the four-action budget.
+Clarification text is appended as a new traceable candidate-evidence record
+before Workflow V1 is run again; the original resume remains untouched.
+
+Start Studio with `uv run langgraph dev`, select `interview_copilot_agent`, and
+paste one object from `data/lesson5_studio_inputs.json`. Keep the same Studio
+thread when answering an interrupt. The two expected trajectories are:
+
+```text
+enough_evidence:
+OBSERVE → GENERATE → OBSERVE → FINISH
+
+high_priority_gap:
+OBSERVE → GENERATE → OBSERVE → ASK_USER → INTERRUPT/RESUME
+        → OBSERVE → GENERATE → OBSERVE → FINISH
+```
+
+For `high_priority_gap`, resume with the answer in `clarification_answers` whose
+ID matches the interrupt payload. Its resume intentionally removes direct SQL,
+Python, and experimentation evidence, plus the nearby proxy claims about
+hypothesis/tracking work and analytical recommendations. It retains one explicit
+bullet proving six years of analytics experience and more than four years of
+digital-product support, so `REQ-01` does not compete for the classroom question.
+Evidence matching also explicitly prevents proxies from proving the three
+removed technical capabilities. The second observation should therefore contain
+`REQ-02`, `REQ-03`, and `REQ-04` in `high_priority_gap_ids`, exclude `REQ-01`,
+and show `allowed_actions: ["ASK_USER"]`. Gemini chooses one eligible gap; after
+the one classroom clarification, the package regenerates and may finish with the
+other gaps represented honestly. The regenerated package overwrites the same
+ignored output file.
+
+### Classroom live-build reset
+
+The two slide-aligned functions in `src/interview_prep/agent.py` are deliberately
+reset for classroom implementation:
+
+- `LESSON 5 LIVE BUILD 1` surrounds `decide_next_action`.
+- `LESSON 5 LIVE BUILD 2` surrounds `interrupt_and_record`.
+
+Each region currently contains the exact `raise NotImplementedError(...)`
+placeholder shown in its `CLASSROOM RESET` comment. Replace that one line during
+class with the listed logic. All schemas, prompts, validation, routes,
+capabilities, and tests outside those two regions remain implemented teaching
+scaffolding.
+
 ## Verification
 
 Run the offline checks without calling Gemini:
@@ -91,7 +160,9 @@ uv run ruff format --check .
 ```
 
 The tests replace Gemini with schema-aware fake responses and exercise the full
-input-to-package path.
+input-to-package path. While the two classroom placeholders remain, tests that
+execute either live-build function will fail with its intentional
+`NotImplementedError`; they pass after both functions are implemented.
 
 ## LangSmith tracing
 
@@ -102,15 +173,16 @@ disable uploads. Use only fictional or anonymized candidate data in traced runs.
 
 ## Optional local LangGraph application
 
-The compiled graph is exported as `interview_prep.graph:graph` and registered in
-`langgraph.json`. Start the local development server with:
+Both compiled graphs are registered in `langgraph.json`: the original
+`interview_copilot_workflow` and Lesson 5's `interview_copilot_agent`. Start the
+local development server with:
 
 ```bash
 uv run langgraph dev
 ```
 
-Studio inputs must follow `WorkflowInput`: raw `job_description` and
-`resume_text` strings. The graph performs evidence normalization after startup.
+Studio inputs use raw `job_description` and `resume_text` strings. Both graphs
+perform evidence normalization after startup.
 
 ## Documentation
 

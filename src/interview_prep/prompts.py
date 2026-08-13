@@ -61,6 +61,21 @@ Coverage rules:
 - PARTIAL: related supplied evidence exists but misses an important dimension.
 - GAP: no supplied evidence supports the requirement.
 
+Experimentation safeguard:
+- A requirement for hands-on experiment design and statistical interpretation
+  needs direct evidence of designing or analyzing an experiment,
+  quasi-experiment, causal study, or statistical test.
+- Forming hypotheses, defining event tracking, or making a recommendation from
+  observational analysis does not by itself support that experimentation
+  requirement. Use GAP when those proxy activities are the only related claims.
+
+Technical-skill safeguards:
+- Advanced SQL requires a direct claim of using SQL; dashboards, metrics, a
+  cloud warehouse, or BI tools alone do not support it.
+- Python proficiency requires a direct claim of using Python; automation,
+  Airflow, forecasting, or basic automated checks alone do not support it.
+- Use GAP when only these adjacent tools or activities are supplied.
+
 Use only requirement_id and evidence_id values present below. Every FULL or
 PARTIAL match must contain at least one supporting evidence_id. Every GAP must
 have an empty evidence_ids list. Judge only the supplied claims; never infer or
@@ -123,4 +138,40 @@ EVIDENCE MATCHES
 
 INTERVIEW STRATEGY
 {_dump(strategy)}
+"""
+
+
+# =============================================================================
+# LESSON 5 AGENT V1 PROMPT
+# =============================================================================
+
+
+def build_agent_prompt(
+    goal: str,
+    observation: Any,
+    previous_error: str | None = None,
+) -> str:
+    """Ask Gemini for one bounded action from factual decision state."""
+
+    retry_context = (
+        f"\nPRIOR DECISION REJECTED BY CODE\n{previous_error}\n"
+        if previous_error
+        else ""
+    )
+    return f"""Choose exactly one next action for the interview-preparation agent.
+
+The runtime has already derived allowed_actions deterministically. You MUST
+choose one action from allowed_actions; every other action will be rejected.
+- For ASK_USER, choose one requirement from high_priority_gaps whose ID is not
+  in asked_requirement_ids. Use its requirement and explanation to phrase one
+  focused factual question. Supply that requirement_id and question.
+- For GENERATE_PREP_PACKAGE or FINISH, omit requirement_id and question.
+- Respect steps_remaining. Return only data conforming to the response schema.
+
+GOAL
+{goal}
+
+OBSERVATION
+{_dump(observation)}
+{retry_context}
 """

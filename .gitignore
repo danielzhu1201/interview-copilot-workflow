@@ -29,6 +29,9 @@ dist/
 # Candidate-specific preparation briefs
 output/
 
+# Local instructor solution backup (intentionally excluded from classroom commits)
+.lesson5_solution_backup/
+
 # Local editor and operating-system files
 .DS_Store
 .idea/
