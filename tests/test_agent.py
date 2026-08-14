@@ -198,6 +198,7 @@ def test_decide_next_action_requests_agent_decision_schema(monkeypatch) -> None:
         models=SimpleNamespace(generate_content=generate_content)
     )
     monkeypatch.setattr(agent, "get_gemini_client", lambda: fake_client)
+    monkeypatch.setattr(agent, "get_model_name", lambda: "test-agent-model")
 
     result = decide_next_action(
         {
@@ -211,7 +212,7 @@ def test_decide_next_action_requests_agent_decision_schema(monkeypatch) -> None:
     )
 
     assert result["next_decision"].next_action == "GENERATE_PREP_PACKAGE"
-    assert captured[0]["model"] == "gemini-3.7-flash"
+    assert captured[0]["model"] == "test-agent-model"
     assert set(captured[0]["config"].response_json_schema["properties"]) == {
         "next_action",
         "target_requirement_id",

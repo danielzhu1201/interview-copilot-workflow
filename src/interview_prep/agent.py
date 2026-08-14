@@ -9,7 +9,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt  # noqa: F401 - used in Lesson 5 Live Build 2
 
 from .graph import graph as workflow_graph
-from .llm import get_gemini_client  # noqa: F401 - used in Lesson 5 Live Build 1
+from .llm import (  # noqa: F401 - used in Lesson 5 Live Build 1
+    get_gemini_client,
+    get_model_name,
+)
 from .prompts import build_agent_prompt  # noqa: F401 - used in Lesson 5 Live Build 1
 from .schemas import (
     AgentAction,
@@ -26,7 +29,6 @@ from .schemas import (
 # =============================================================================
 
 DEFAULT_GOAL = "Produce a grounded, validated prep package without inventing evidence."
-DECISION_MODEL = "gemini-3.7-flash"
 MAX_AGENT_ACTIONS = 4
 MAX_CLASSROOM_QUESTIONS = 1
 MAX_DECISION_RETRIES = 1
@@ -138,7 +140,24 @@ def decide_next_action(state: AgentState) -> dict[str, Any]:
     # 4. Validate response.parsed as AgentDecision.
     # 5. Return only {"next_decision": decision}; never store the raw response.
     # --- LIVE IMPLEMENTATION: START ---
-    raise NotImplementedError("Complete Live Build 1 in class")
+    goal = state.get("goal", DEFAULT_GOAL)
+    observation = state["observation"]
+    prompt = build_agent_prompt(
+        goal,
+        observation,
+        previous_error=state.get("agent_error"),
+    )
+    client = get_gemini_client()
+    response = client.models.generate_content(
+        model=get_model_name(),
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_json_schema=AgentDecision.model_json_schema(),
+        ),
+    )
+    decision = AgentDecision.model_validate(response.parsed)
+    return {"next_decision": decision}
     # --- LIVE IMPLEMENTATION: END ---
     # === LESSON 5 LIVE BUILD 1: END ===
 
@@ -264,7 +283,32 @@ def interrupt_and_record(state: AgentState) -> dict[str, Any]:
     # 5. Return additive clarification and asked-ID updates.
     # Keep everything before interrupt() idempotent because the node restarts.
     # --- LIVE IMPLEMENTATION: START ---
-    raise NotImplementedError("Complete Live Build 2 in class")
+    decision = state["next_decision"]
+    requirement_id = decision.target_requirement_id
+    question = decision.question
+    if requirement_id is None or question is None:
+        raise ValueError(
+            "Authorized ASK_USER decision requires a question and requirement ID."
+        )
+
+    answer = interrupt(
+        {
+            "type": "candidate_evidence_request",
+            "requirement_id": requirement_id,
+            "question": question,
+        }
+    )
+    clarification = CandidateClarification.model_validate(
+        {
+            "requirement_id": requirement_id,
+            "question": question,
+            "answer": answer,
+        }
+    )
+    return {
+        "candidate_clarifications": [clarification],
+        "asked_requirement_ids": [requirement_id],
+    }
     # --- LIVE IMPLEMENTATION: END ---
     # === LESSON 5 LIVE BUILD 2: END ===
 
