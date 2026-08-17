@@ -47,6 +47,19 @@ JOB DESCRIPTION
 """
 
 
+def build_interview_round_parsing_prompt(interview_round_text: str) -> str:
+    """Parse optional freeform round notes without inventing missing details."""
+
+    return f"""Parse the user's freeform description of their next interview round.
+Extract only details explicitly present in the text. Do not infer missing facts.
+Leave optional strings null and optional lists empty when the user did not
+provide them. Return only data conforming to the response schema.
+
+INTERVIEW ROUND DESCRIPTION
+{interview_round_text}
+"""
+
+
 def build_evidence_matching_prompt(
     requirements: list[Any],
     candidate_evidence: list[Any],
@@ -94,6 +107,7 @@ def build_strategy_prompt(
     requirements: list[Any],
     evidence_matches: list[Any],
     focus_areas: list[Any],
+    interview_round: Any,
 ) -> str:
     """Build a strategy using only validated, ID-linked workflow state."""
 
@@ -102,7 +116,14 @@ workflow state. Prioritize high-importance PARTIAL and GAP areas while using
 FULL matches as candidate stories. Never invent candidate experience. Every
 strategy and story item must retain a valid requirement_id and only the
 evidence_ids supplied for that requirement. GAP items must use no evidence IDs.
+When target interview round context is supplied, tailor emphasis, communication
+style, and preparation advice to it. When it is null, create general interview
+preparation without inventing round details. Round context changes preparation,
+never candidate evidence.
 Return only data conforming to the response schema.
+
+TARGET INTERVIEW ROUND
+{_dump(interview_round)}
 
 REQUIREMENTS
 {_dump(requirements)}
@@ -119,6 +140,7 @@ def build_questions_prompt(
     requirements: list[Any],
     evidence_matches: list[Any],
     strategy: Any,
+    interview_round: Any,
 ) -> str:
     """Turn the grounded strategy into structured interview practice."""
 
@@ -128,7 +150,13 @@ retain a valid requirement_id and may use only evidence_ids already linked to
 that requirement. GAP questions must use an empty evidence_ids list and coach
 an honest answer rather than inventing experience. Provide a useful follow-up
 probe and at least two concise answer-outline bullets. Return only data
-conforming to the response schema.
+conforming to the response schema. When target interview round context is
+supplied, tailor question format, emphasis, and follow-up probes to it. When it
+is null, create general practice questions without inventing round details.
+Round context changes preparation, never candidate evidence.
+
+TARGET INTERVIEW ROUND
+{_dump(interview_round)}
 
 REQUIREMENTS
 {_dump(requirements)}
@@ -142,36 +170,37 @@ INTERVIEW STRATEGY
 
 
 # =============================================================================
-# LESSON 5 AGENT V1 PROMPT
+# LESSON 6 SHORT-CONTEXT EVIDENCE ASSESSMENT
 # =============================================================================
 
 
-def build_agent_prompt(
-    goal: str,
-    observation: Any,
-    previous_error: str | None = None,
+def build_clarification_assessment_prompt(
+    *,
+    requirement: Any,
+    question: str,
+    answer: str,
 ) -> str:
-    """Ask Gemini for one bounded action from factual decision state."""
+    """Assess one resumed answer without exposing the full workflow context."""
 
-    retry_context = (
-        f"\nPRIOR DECISION REJECTED BY CODE\n{previous_error}\n"
-        if previous_error
-        else ""
-    )
-    return f"""Choose exactly one next action for the interview-preparation agent.
+    return f"""Assess whether the candidate's answer may be admitted as evidence
+for exactly one job requirement. Return only data conforming to the schema.
 
-The runtime has already derived allowed_actions deterministically. You MUST
-choose one action from allowed_actions; every other action will be rejected.
-- For ASK_USER, choose one requirement from high_priority_gaps whose ID is not
-  in asked_requirement_ids. Use its requirement and explanation to phrase one
-  focused factual question. Supply that requirement_id and question.
-- For GENERATE_PREP_PACKAGE or FINISH, omit requirement_id and question.
-- Respect steps_remaining. Return only data conforming to the response schema.
+Validation rubric:
+- target_requirement_id must exactly match the supplied requirement ID.
+- is_valid may be true only when the answer directly addresses the requirement
+  with a concrete first-person claim about what the candidate actually did.
+- Reject vague interest, plans to learn, unsupported self-ratings, unrelated
+  experience, and answers that merely repeat the requirement.
+- accepted_claim must be a concise, faithful restatement of facts explicitly in
+  the answer. Never strengthen, infer, or invent a claim.
+- When is_valid is false, accepted_claim must be null.
 
-GOAL
-{goal}
+TARGET REQUIREMENT
+{_dump(requirement)}
 
-OBSERVATION
-{_dump(observation)}
-{retry_context}
+QUESTION
+{question}
+
+CANDIDATE ANSWER
+{answer}
 """

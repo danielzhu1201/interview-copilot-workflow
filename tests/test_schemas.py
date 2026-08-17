@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from interview_prep.schemas import JobRequirement, RequirementExtraction, WorkflowState
+from interview_prep.schemas import (
+    ClarificationAssessment,
+    InterviewRound,
+    JobRequirement,
+    RequirementExtraction,
+    WorkflowState,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,6 +37,40 @@ def test_requirement_rejects_an_invalid_id() -> None:
             importance=5,
             requirement_type="must_have",
             source_quote="Advanced SQL skills are required.",
+        )
+
+
+def test_lesson6_round_and_assessment_contracts_are_strict() -> None:
+    empty_round = InterviewRound()
+    interview_round = InterviewRound.model_validate(
+        {
+            "round_type": "analytics case",
+            "interviewer_roles": ["Hiring Manager"],
+            "focus": ["hypothesis testing"],
+        }
+    )
+    assessment = ClarificationAssessment.model_validate(
+        {
+            "target_requirement_id": "REQ-04",
+            "is_valid": True,
+            "relevance_reason": "The answer directly addresses experiments.",
+            "specificity_reason": "It includes a concrete action and result.",
+            "accepted_claim": "I designed and analyzed seven experiments.",
+        }
+    )
+
+    assert empty_round.model_dump() == {
+        "round_type": None,
+        "format": None,
+        "interviewer_roles": [],
+        "focus": [],
+        "notes": None,
+    }
+    assert interview_round.format is None
+    assert assessment.target_requirement_id == "REQ-04"
+    with pytest.raises(ValidationError):
+        InterviewRound.model_validate(
+            {"round_type": "case", "unexpected": "not allowed"}
         )
 
 

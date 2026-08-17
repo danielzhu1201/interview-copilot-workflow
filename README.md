@@ -1,11 +1,13 @@
 # interview-copilot-workflow
 
 This package implements the fixed Interview Prep Workflow V1 from Lessons 3
-and 4, plus the bounded human-in-the-loop Agent V1 from Lesson 5.
+and 4, the human-in-the-loop Agent V1 from Lesson 5, and Lesson 6's
+round-guided, evidence-gated Agent V2.
 
 ```text
 START
   → validate_inputs
+  → parse_interview_round
   → extract_candidate_evidence
   → extract_requirements
   → match_evidence
@@ -79,74 +81,83 @@ package can reach `assemble_package`.
 The remaining Lesson 4 nodes, full graph, valid/invalid branch, source adapters,
 and package assembly are implemented.
 
-## Lesson 5 human-in-the-loop agent
+## Lesson 6 round-guided, evidence-gated agent
 
-`interview_copilot_agent` wraps the unchanged Workflow V1 in this resumable
-loop:
-
-```text
-OBSERVE → DECIDE → VALIDATE + ROUTE
-                     ├─ GENERATE_PREP_PACKAGE → OBSERVE
-                     ├─ ASK_USER → INTERRUPT → RESUME → OBSERVE
-                     ├─ FINISH → END
-                     └─ INVALID → END
-```
-
-Gemini proposes exactly one structured `AgentDecision`, but code derives the
-currently allowed action before the model runs. The deterministic precedence is:
-generate the first package; ask about an eligible unasked importance-4-or-5 GAP;
-regenerate after a clarification; then finish a valid package. The observation
-includes each eligible gap's requirement text and evidence explanation so Gemini
-can choose among eligible gaps and phrase a focused question.
-
-Code also enforces required ASK_USER arguments, no repeated requirement, at most
-one question, a four-action budget, and FINISH only when the package is valid and
-no eligible unasked gap remains. An unauthorized decision is returned to Gemini
-once with the code-owned error and allowed actions; a second invalid decision
-stops safely. Decision retries do not consume the four-action budget.
-Clarification text is appended as a new traceable candidate-evidence record
-before Workflow V1 is run again; the original resume remains untouched.
-
-Start Studio with `uv run langgraph dev`, select `interview_copilot_agent`, and
-paste one object from `data/lesson5_studio_inputs.json`. Keep the same Studio
-thread when answering an interrupt. The two expected trajectories are:
+`interview_copilot_agent` implements Agent V2 as this resumable loop:
 
 ```text
-enough_evidence:
-OBSERVE → GENERATE → OBSERVE → FINISH
-
-high_priority_gap:
-OBSERVE → GENERATE → OBSERVE → ASK_USER → INTERRUPT/RESUME
-        → OBSERVE → GENERATE → OBSERVE → FINISH
+PARSE OPTIONAL ROUND
+  → GENERATE INITIAL PACKAGE
+  → OBSERVE + SELECT NEXT GAP
+      ├─ GAP → INTERRUPT/RESUME → ASSESS + RECORD → OBSERVE
+      ├─ EMPTY QUEUE → GENERATE FINAL PACKAGE → END
+      └─ INVALID INITIAL PACKAGE → END
 ```
 
-For `high_priority_gap`, resume with the answer in `clarification_answers` whose
-ID matches the interrupt payload. Its resume intentionally removes direct SQL,
-Python, and experimentation evidence, plus the nearby proxy claims about
-hypothesis/tracking work and analytical recommendations. It retains one explicit
-bullet proving six years of analytics experience and more than four years of
-digital-product support, so `REQ-01` does not compete for the classroom question.
-Evidence matching also explicitly prevents proxies from proving the three
-removed technical capabilities. The second observation should therefore contain
-`REQ-02`, `REQ-03`, and `REQ-04` in `high_priority_gap_ids`, exclude `REQ-01`,
-and show `allowed_actions: ["ASK_USER"]`. Gemini chooses one eligible gap; after
-the one classroom clarification, the package regenerates and may finish with the
-other gaps represented honestly. The regenerated package overwrites the same
-ignored output file.
+The optional `interview_round` input is freeform text. When it contains text,
+Gemini parses it once into an `InterviewRound` whose fields are all optional:
+round type, format, interviewer roles, focus areas, and notes. The parsed object
+is reused by the initial and final workflow runs. When the input is omitted or
+blank, the parser makes no model call, the context remains `None`, and package
+generation continues without a target-round section. Round context changes the
+strategy, mock questions, and rendered target-round section; it never changes
+candidate evidence or requirement matching.
+
+Every requirement whose initial coverage is `GAP` enters one deterministic
+queue. `select_next_gap()` excludes IDs already in
+`processed_requirement_ids`, sorts by importance descending and requirement ID
+ascending, and returns one requirement at a time. Every GAP is asked exactly
+once, regardless of whether its answer is accepted.
+
+After same-thread resume, Gemini sees only the current requirement, its grounded
+source quote, the question, the answer, and the validation rubric. It returns a
+`ClarificationAssessment`. Code admits the answer only if it meets the minimum
+length, targets the current requirement, is marked valid, and supplies a
+non-empty `accepted_claim`. Accepted answers accumulate in
+`accepted_clarifications`; every accepted or rejected result accumulates in
+`clarification_records`. Rejected text never becomes candidate evidence.
+
+The full workflow runs once to create the initial round-aware package and once
+after the GAP queue closes. It does not run between clarification answers. The
+initial package stays in graph state without being written; the canonical final
+run adds only accepted claims, rematches every requirement, rebuilds the
+round-aware preparation, and writes `output/interview-prep-package.md`.
+
+Start Studio with `uv run langgraph dev` and select
+`interview_copilot_agent`. The Lesson 6 fixture separates round guidance from
+evidence collection:
+
+- Run `perfect_resume_analytics_case` and
+  `perfect_resume_cross_functional_panel` in separate threads. They use the same
+  complete resume and should produce no GAP interrupts; only the round-specific
+  strategy and questions should change.
+- Run `imperfect_profile_with_gaps` in a new thread for the evidence loop. Keep
+  that thread and resume with `gap_responses[requirement_id].answer` for each
+  interrupt.
+
+The intended gap trajectory is:
+
+```text
+REQ-02 SQL        → accepted
+REQ-03 Python     → rejected
+REQ-04 experiment → accepted
+empty queue       → one final workflow run
+```
+
+Each `gap_responses` item declares its `expected_result`. `expected_gap_flow`
+declares the expected queue and final processed, accepted, and rejected IDs.
 
 ### Classroom live-build reset
 
-The two slide-aligned functions in `src/interview_prep/agent.py` are deliberately
-reset for classroom implementation:
+The student implementation intentionally resets both slide-aligned functions:
 
-- `LESSON 5 LIVE BUILD 1` surrounds `decide_next_action`.
-- `LESSON 5 LIVE BUILD 2` surrounds `interrupt_and_record`.
+- `LESSON 6 LIVE BUILD A` surrounds `select_next_gap`.
+- `LESSON 6 LIVE BUILD B` surrounds `should_accept_clarification`.
 
-Each region currently contains the exact `raise NotImplementedError(...)`
-placeholder shown in its `CLASSROOM RESET` comment. Replace that one line during
-class with the listed logic. All schemas, prompts, validation, routes,
-capabilities, and tests outside those two regions remain implemented teaching
-scaffolding.
+Each region contains a `NotImplementedError` plus implementation notes. Complete
+both functions in class without changing the surrounding schemas, graph,
+prompts, or state-update nodes. See `LESSON_6.md` for the inputs, invariants,
+implementation checklist, and focused test commands.
 
 ## Verification
 
@@ -160,9 +171,10 @@ uv run ruff format --check .
 ```
 
 The tests replace Gemini with schema-aware fake responses and exercise the full
-input-to-package path. While the two classroom placeholders remain, tests that
-execute either live-build function will fail with its intentional
-`NotImplementedError`; they pass after both functions are implemented.
+input-to-package path, all-GAP queue, short-context assessment, evidence gate,
+audit trail, and exactly-one final regeneration behavior. In the committed
+student version, tests that reach either live-build function fail intentionally
+until its implementation is completed.
 
 ## LangSmith tracing
 
@@ -174,15 +186,16 @@ disable uploads. Use only fictional or anonymized candidate data in traced runs.
 ## Optional local LangGraph application
 
 Both compiled graphs are registered in `langgraph.json`: the original
-`interview_copilot_workflow` and Lesson 5's `interview_copilot_agent`. Start the
+`interview_copilot_workflow` and Lesson 6's `interview_copilot_agent`. Start the
 local development server with:
 
 ```bash
 uv run langgraph dev
 ```
 
-Studio inputs use raw `job_description` and `resume_text` strings. Both graphs
-perform evidence normalization after startup.
+Studio inputs use raw `job_description` and `resume_text` strings plus optional
+freeform `interview_round` text. Both graphs normalize supplied round context
+and candidate evidence after startup.
 
 ## Documentation
 

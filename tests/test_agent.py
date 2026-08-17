@@ -10,312 +10,169 @@ from langgraph.types import Command
 
 from interview_prep import agent
 from interview_prep.agent import (
-    authorize_decision,
     build_agent_graph,
-    decide_next_action,
-    observe_state,
+    select_next_gap,
+    should_accept_clarification,
 )
-from interview_prep.nodes import extract_candidate_evidence
 from interview_prep.schemas import (
-    AgentDecision,
-    AgentObservation,
-    CandidateClarification,
+    CandidateEvidence,
+    ClarificationAssessment,
     EvidenceMatch,
-    HighPriorityGap,
     JobRequirement,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _requirement(*, importance: int = 5) -> JobRequirement:
+def _requirement(
+    requirement_id: str,
+    requirement: str,
+    *,
+    importance: int = 5,
+) -> JobRequirement:
     return JobRequirement(
-        requirement_id="REQ-04",
-        category="analytics",
-        requirement="Design experiments for product decisions.",
+        requirement_id=requirement_id,
+        category="technical",
+        requirement=requirement,
         importance=importance,
         requirement_type="must_have",
-        source_quote="Hands-on experience designing experiments for product decisions.",
+        source_quote=f"Required qualification: {requirement}",
     )
 
 
-def _match(coverage: str) -> EvidenceMatch:
+REQUIREMENTS = [
+    _requirement("REQ-02", "Use advanced SQL on a cloud data warehouse."),
+    _requirement("REQ-03", "Use Python for analysis and automation."),
+    _requirement("REQ-04", "Design experiments for product decisions."),
+]
+
+
+def _match(requirement_id: str, coverage: str = "GAP") -> EvidenceMatch:
     return EvidenceMatch(
-        requirement_id="REQ-04",
-        evidence_ids=[] if coverage == "GAP" else ["EXP-18"],
+        requirement_id=requirement_id,
+        evidence_ids=[] if coverage == "GAP" else ["EXP-01"],
         coverage=coverage,
         explanation="The supplied evidence determines this coverage result.",
         confidence=0.95,
     )
 
 
-def _observation(**updates) -> AgentObservation:
-    values = {
-        "package_generated": True,
-        "package_valid": True,
-        "high_priority_gap_ids": ["REQ-04"],
-        "high_priority_gaps": [
-            HighPriorityGap(
-                requirement_id="REQ-04",
-                requirement="Design experiments for product decisions.",
-                importance=5,
-                explanation="No direct experiment evidence was supplied.",
-            )
-        ],
-        "asked_requirement_ids": [],
-        "allowed_actions": ["ASK_USER"],
-        "latest_clarification": None,
-        "last_action": "GENERATE_PREP_PACKAGE",
-        "steps_remaining": 3,
-    }
-    values.update(updates)
-    return AgentObservation.model_validate(values)
-
-
-def _decision(action: str, **updates) -> AgentDecision:
-    values = {
-        "next_action": action,
-        "reason_summary": "This is the next bounded action.",
-    }
-    values.update(updates)
-    return AgentDecision.model_validate(values)
-
-
-def test_observation_derives_threshold_clarification_and_budget() -> None:
-    result = observe_state(
-        {
-            "requirements": [_requirement(importance=4)],
-            "evidence_matches": [_match("GAP")],
-            "candidate_clarifications": [
-                CandidateClarification(
-                    requirement_id="REQ-04",
-                    question="What experiment did you design?",
-                    answer="I designed a controlled onboarding experiment.",
-                )
-            ],
-            "asked_requirement_ids": ["REQ-04"],
-            "action_count": 2,
-            "last_action": "ASK_USER",
-            "package_generated": True,
-            "package_valid": True,
-        }
+def _assessment(
+    *,
+    target_requirement_id: str = "REQ-02",
+    is_valid: bool = True,
+    accepted_claim: str | None = "I used advanced SQL with complex joins.",
+) -> ClarificationAssessment:
+    return ClarificationAssessment(
+        target_requirement_id=target_requirement_id,
+        is_valid=is_valid,
+        relevance_reason="The answer directly addresses the target requirement.",
+        specificity_reason="The answer includes a concrete tool and activity.",
+        accepted_claim=accepted_claim,
     )
 
-    observation = result["observation"]
-    assert observation.high_priority_gap_ids == ["REQ-04"]
-    assert observation.high_priority_gaps[0].requirement.startswith("Design")
-    assert observation.allowed_actions == ["GENERATE_PREP_PACKAGE"]
-    assert observation.latest_clarification.startswith("I designed")
-    assert observation.steps_remaining == 2
 
-
-def test_observation_excludes_importance_three_gap() -> None:
-    result = observe_state(
-        {
-            "requirements": [_requirement(importance=3)],
-            "evidence_matches": [_match("GAP")],
-        }
-    )
-
-    assert result["observation"].high_priority_gap_ids == []
-    assert result["observation"].high_priority_gaps == []
-    assert result["observation"].allowed_actions == ["GENERATE_PREP_PACKAGE"]
-
-
-def test_observation_requires_ask_before_finish_for_unasked_gap() -> None:
-    result = observe_state(
-        {
-            "requirements": [_requirement()],
-            "evidence_matches": [_match("GAP")],
-            "package_generated": True,
-            "package_valid": True,
-            "last_action": "GENERATE_PREP_PACKAGE",
-            "action_count": 1,
-        }
-    )
-
-    observation = result["observation"]
-    assert observation.high_priority_gap_ids == ["REQ-04"]
-    assert observation.allowed_actions == ["ASK_USER"]
-
-
-def test_observation_exposes_three_high_priority_gaps_deterministically() -> None:
-    requirement_specs = [
-        ("REQ-02", "Use advanced SQL on a cloud data warehouse."),
-        ("REQ-03", "Use Python for analysis and automation."),
-        ("REQ-04", "Design experiments for product decisions."),
-    ]
+def test_select_next_gap_processes_every_gap_in_stable_priority_order() -> None:
     requirements = [
-        JobRequirement(
-            requirement_id=requirement_id,
-            category="technical" if requirement_id != "REQ-04" else "analytics",
-            requirement=requirement,
-            importance=5,
-            requirement_type="must_have",
-            source_quote=f"Required qualification: {requirement}",
-        )
-        for requirement_id, requirement in requirement_specs
+        REQUIREMENTS[0].model_copy(update={"importance": 4}),
+        REQUIREMENTS[1],
+        REQUIREMENTS[2],
     ]
-    matches = [
-        EvidenceMatch(
-            requirement_id=requirement_id,
-            evidence_ids=[],
-            coverage="GAP",
-            explanation="No direct supporting candidate evidence was supplied.",
-            confidence=1,
-        )
-        for requirement_id, _ in requirement_specs
-    ]
-
-    observation = observe_state(
-        {
-            "requirements": requirements,
-            "evidence_matches": matches,
-            "package_generated": True,
-            "package_valid": True,
-            "last_action": "GENERATE_PREP_PACKAGE",
-            "action_count": 1,
-        }
-    )["observation"]
-
-    assert observation.high_priority_gap_ids == ["REQ-02", "REQ-03", "REQ-04"]
-    assert observation.allowed_actions == ["ASK_USER"]
-
-
-def test_decide_next_action_requests_agent_decision_schema(monkeypatch) -> None:
-    captured = []
-
-    def generate_content(**kwargs):
-        captured.append(kwargs)
-        return SimpleNamespace(
-            parsed={
-                "next_action": "GENERATE_PREP_PACKAGE",
-                "reason_summary": "No package has been generated yet.",
-            }
-        )
-
-    fake_client = SimpleNamespace(
-        models=SimpleNamespace(generate_content=generate_content)
-    )
-    monkeypatch.setattr(agent, "get_gemini_client", lambda: fake_client)
-    monkeypatch.setattr(agent, "get_model_name", lambda: "test-agent-model")
-
-    result = decide_next_action(
-        {
-            "goal": agent.DEFAULT_GOAL,
-            "observation": _observation(
-                package_generated=False,
-                allowed_actions=["GENERATE_PREP_PACKAGE"],
-            ),
-            "agent_error": "The prior action was not allowed.",
-        }
-    )
-
-    assert result["next_decision"].next_action == "GENERATE_PREP_PACKAGE"
-    assert captured[0]["model"] == "test-agent-model"
-    assert set(captured[0]["config"].response_json_schema["properties"]) == {
-        "next_action",
-        "target_requirement_id",
-        "question",
-        "reason_summary",
+    state = {
+        "requirements": requirements,
+        "evidence_matches": [_match(item.requirement_id) for item in requirements],
+        "processed_requirement_ids": ["REQ-03"],
     }
-    assert '"allowed_actions": [' in captured[0]["contents"]
-    assert "Design experiments for product decisions" in captured[0]["contents"]
-    assert "PRIOR DECISION REJECTED BY CODE" in captured[0]["contents"]
+
+    assert select_next_gap(state).requirement_id == "REQ-04"
+    state["processed_requirement_ids"].append("REQ-04")
+    assert select_next_gap(state).requirement_id == "REQ-02"
+    state["processed_requirement_ids"].append("REQ-02")
+    assert select_next_gap(state) is None
+
+
+def test_select_next_gap_ignores_non_gap_matches() -> None:
+    state = {
+        "requirements": REQUIREMENTS,
+        "evidence_matches": [
+            _match("REQ-02", "FULL"),
+            _match("REQ-03", "PARTIAL"),
+            _match("REQ-04", "GAP"),
+        ],
+    }
+
+    assert select_next_gap(state).requirement_id == "REQ-04"
 
 
 @pytest.mark.parametrize(
-    ("decision", "observation", "error"),
+    ("answer", "assessment", "target_requirement_id", "expected"),
     [
         (
-            _decision("ASK_USER"),
-            _observation(),
-            "requires a question and requirement ID",
+            "I wrote SQL.",
+            _assessment(),
+            "REQ-02",
+            False,
         ),
         (
-            _decision(
-                "ASK_USER",
-                target_requirement_id="REQ-04",
-                question="What experiment did you design?",
-            ),
-            _observation(high_priority_gap_ids=[]),
-            "eligible high-priority gap",
+            "I regularly wrote complex SQL queries in BigQuery.",
+            _assessment(target_requirement_id="REQ-03"),
+            "REQ-02",
+            False,
         ),
         (
-            _decision(
-                "ASK_USER",
-                target_requirement_id="REQ-04",
-                question="What experiment did you design?",
-            ),
-            _observation(asked_requirement_ids=["REQ-04"]),
-            "cannot be asked twice",
+            "I regularly wrote complex SQL queries in BigQuery.",
+            _assessment(is_valid=False, accepted_claim=None),
+            "REQ-02",
+            False,
         ),
         (
-            _decision(
-                "ASK_USER",
-                target_requirement_id="REQ-04",
-                question="What experiment did you design?",
-            ),
-            _observation(asked_requirement_ids=["REQ-03"]),
-            "At most one classroom question",
+            "I regularly wrote complex SQL queries in BigQuery.",
+            _assessment(accepted_claim=None),
+            "REQ-02",
+            False,
         ),
         (
-            _decision("FINISH"),
-            _observation(package_valid=False, allowed_actions=["FINISH"]),
-            "requires a valid prep package",
-        ),
-        (
-            _decision("FINISH"),
-            _observation(allowed_actions=["FINISH"]),
-            "no eligible unasked high-priority gap",
-        ),
-        (
-            _decision("GENERATE_PREP_PACKAGE"),
-            _observation(steps_remaining=0),
-            "budget is exhausted",
+            "I regularly wrote complex SQL queries in BigQuery.",
+            _assessment(),
+            "REQ-02",
+            True,
         ),
     ],
 )
-def test_authorization_rejects_invalid_decisions(
-    decision: AgentDecision,
-    observation: AgentObservation,
-    error: str,
+def test_should_accept_clarification_applies_every_code_gate(
+    answer: str,
+    assessment: ClarificationAssessment,
+    target_requirement_id: str,
+    expected: bool,
 ) -> None:
-    route, update = authorize_decision(
-        {
-            "next_decision": decision,
-            "observation": observation,
-            "action_count": 1,
-        }
+    assert (
+        should_accept_clarification(answer, assessment, target_requirement_id)
+        is expected
     )
-
-    assert route == "invalid"
-    assert error in update["agent_error"]
-    assert update["stop_reason"] == "invalid_decision"
-
-
-def _decision_client(payloads: list[dict]):
-    pending = list(payloads)
-
-    def generate_content(**_kwargs):
-        return SimpleNamespace(parsed=pending.pop(0))
-
-    return SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
 
 
 class _FakeWorkflow:
-    def __init__(self, *, starts_with_gap: bool):
-        self.starts_with_gap = starts_with_gap
+    def __init__(self, *, has_gaps: bool = True):
+        self.has_gaps = has_gaps
         self.calls: list[dict] = []
 
     def invoke(self, workflow_input: dict) -> dict:
         self.calls.append(workflow_input)
-        clarified = bool(workflow_input["candidate_clarifications"])
-        coverage = "GAP" if self.starts_with_gap and not clarified else "FULL"
+        accepted = workflow_input["candidate_clarifications"]
+        coverage = "GAP" if self.has_gaps else "FULL"
+        matches = [_match(item.requirement_id, coverage) for item in REQUIREMENTS]
         return {
-            "candidate_evidence": [],
-            "requirements": [_requirement()],
-            "evidence_matches": [_match(coverage)],
+            "interview_round_context": workflow_input["interview_round_context"],
+            "candidate_evidence": [
+                CandidateEvidence(
+                    evidence_id=f"EXP-{index:02d}",
+                    claim=item.accepted_claim,
+                    source="Candidate clarification",
+                )
+                for index, item in enumerate(accepted, start=1)
+            ],
+            "requirements": REQUIREMENTS,
+            "evidence_matches": matches,
             "focus_areas": [],
             "interview_strategy": None,
             "mock_questions": [],
@@ -325,211 +182,204 @@ class _FakeWorkflow:
         }
 
 
-def _run_agent(monkeypatch, decisions: list[dict], *, starts_with_gap: bool):
-    fake_workflow = _FakeWorkflow(starts_with_gap=starts_with_gap)
-    fake_client = _decision_client(decisions)
-    monkeypatch.setattr(agent, "workflow_graph", fake_workflow)
-    monkeypatch.setattr(
-        agent,
-        "get_gemini_client",
-        lambda: fake_client,
-    )
-    compiled = build_agent_graph(checkpointer=InMemorySaver())
-    config = {"configurable": {"thread_id": "lesson-5-test"}}
-    return compiled, config, fake_workflow
+def _assessment_client(payloads: list[dict]):
+    pending = list(payloads)
+    captured: list[dict] = []
 
+    def generate_content(**kwargs):
+        captured.append(kwargs)
+        return SimpleNamespace(parsed=pending.pop(0))
 
-def test_enough_evidence_trajectory_finishes_without_interrupt(monkeypatch) -> None:
-    compiled, config, fake_workflow = _run_agent(
-        monkeypatch,
-        [
-            {
-                "next_action": "GENERATE_PREP_PACKAGE",
-                "reason_summary": "Generate the initial validated package.",
-            },
-            {
-                "next_action": "FINISH",
-                "reason_summary": "The package is valid and complete.",
-            },
-        ],
-        starts_with_gap=False,
+    return (
+        SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)),
+        captured,
     )
 
-    result = compiled.invoke(
-        {"job_description": "Example JD", "resume_text": "Example resume"},
-        config=config,
-    )
 
-    assert result["stop_reason"] == "valid_package_complete"
-    assert result["action_count"] == 2
-    assert result.get("asked_requirement_ids", []) == []
-    assert len(fake_workflow.calls) == 1
-
-
-def test_gap_trajectory_interrupts_resumes_and_regenerates(monkeypatch) -> None:
-    compiled, config, fake_workflow = _run_agent(
-        monkeypatch,
-        [
-            {
-                "next_action": "GENERATE_PREP_PACKAGE",
-                "reason_summary": "Generate the initial validated package.",
-            },
-            {
-                "next_action": "ASK_USER",
-                "target_requirement_id": "REQ-04",
-                "question": "What experiment did you design and analyze?",
-                "reason_summary": "One factual answer could resolve the gap.",
-            },
-            {
-                "next_action": "GENERATE_PREP_PACKAGE",
-                "reason_summary": "Regenerate with the candidate clarification.",
-            },
-            {
-                "next_action": "FINISH",
-                "reason_summary": "The regenerated package is valid.",
-            },
-        ],
-        starts_with_gap=True,
-    )
-
-    paused = compiled.invoke(
-        {"job_description": "Example JD", "resume_text": "Example resume"},
-        config=config,
-    )
-    request = paused["__interrupt__"][0].value
-
-    assert request == {
-        "type": "candidate_evidence_request",
-        "requirement_id": "REQ-04",
-        "question": "What experiment did you design and analyze?",
+def _valid_payload(requirement_id: str, claim: str) -> dict:
+    return {
+        "target_requirement_id": requirement_id,
+        "is_valid": True,
+        "relevance_reason": "The answer directly addresses the requirement.",
+        "specificity_reason": "The answer names concrete work and methods.",
+        "accepted_claim": claim,
     }
 
-    answer = (
-        "I designed and analyzed seven controlled product experiments at Meridian "
-        "Works. One onboarding experiment increased team activation by 8.4% and "
-        "informed the next-quarter roadmap."
-    )
-    result = compiled.invoke(Command(resume=answer), config=config)
 
-    assert result["stop_reason"] == "valid_package_complete"
-    assert result["action_count"] == 4
-    assert result["asked_requirement_ids"] == ["REQ-04"]
-    assert len(result["candidate_clarifications"]) == 1
-    assert len(fake_workflow.calls) == 2
-    clarification = fake_workflow.calls[1]["candidate_clarifications"][0]
-    assert clarification.answer == answer
+def _invalid_payload(requirement_id: str) -> dict:
+    return {
+        "target_requirement_id": requirement_id,
+        "is_valid": False,
+        "relevance_reason": "The answer mentions the skill but gives no experience.",
+        "specificity_reason": "The answer has no concrete action or result.",
+        "accepted_claim": None,
+    }
 
 
-def test_invalid_finish_is_retried_once_as_ask_user(monkeypatch) -> None:
-    compiled, config, fake_workflow = _run_agent(
-        monkeypatch,
+def test_agent_processes_all_gaps_then_runs_one_final_workflow(monkeypatch) -> None:
+    fake_workflow = _FakeWorkflow()
+    fake_client, captured = _assessment_client(
         [
             {
-                "next_action": "GENERATE_PREP_PACKAGE",
-                "reason_summary": "Generate the initial validated package.",
+                "round_type": "analytics case",
+                "format": "60-minute live case",
+                "interviewer_roles": ["Hiring Manager"],
+                "focus": ["SQL", "experimentation"],
+                "notes": None,
             },
-            {
-                "next_action": "FINISH",
-                "reason_summary": "Incorrectly try to finish despite the gap.",
-            },
-            {
-                "next_action": "ASK_USER",
-                "target_requirement_id": "REQ-04",
-                "question": "What experiment did you design and analyze?",
-                "reason_summary": "Ask about the eligible experiment gap.",
-            },
-            {
-                "next_action": "GENERATE_PREP_PACKAGE",
-                "reason_summary": "Regenerate with the clarification.",
-            },
-            {
-                "next_action": "FINISH",
-                "reason_summary": "The regenerated package is valid.",
-            },
-        ],
-        starts_with_gap=True,
+            _valid_payload(
+                "REQ-02",
+                "I used advanced SQL with complex joins and window functions.",
+            ),
+            _invalid_payload("REQ-03"),
+            _valid_payload(
+                "REQ-04",
+                "I designed and analyzed seven controlled product experiments.",
+            ),
+        ]
     )
+    monkeypatch.setattr(agent, "workflow_graph", fake_workflow)
+    monkeypatch.setattr(agent, "get_gemini_client", lambda: fake_client)
+    monkeypatch.setattr(agent, "get_model_name", lambda: "test-model")
+
+    compiled = build_agent_graph(checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": "lesson-6-all-gaps"}}
+    inputs = {
+        "job_description": "Example JD",
+        "resume_text": "Example resume",
+        "interview_round": (
+            "A 60-minute live analytics case with the hiring manager, focused "
+            "on SQL and experimentation."
+        ),
+    }
+
+    paused = compiled.invoke(inputs, config=config)
+    assert paused["__interrupt__"][0].value["requirement_id"] == "REQ-02"
 
     paused = compiled.invoke(
-        {"job_description": "Example JD", "resume_text": "Example resume"},
+        Command(
+            resume=(
+                "I wrote complex SQL in BigQuery using joins, window functions, "
+                "and query-plan optimization."
+            )
+        ),
         config=config,
     )
+    assert paused["__interrupt__"][0].value["requirement_id"] == "REQ-03"
 
+    paused = compiled.invoke(
+        Command(resume="I have used Python and would like to use it more."),
+        config=config,
+    )
     assert paused["__interrupt__"][0].value["requirement_id"] == "REQ-04"
+
     result = compiled.invoke(
-        Command(resume="I designed and analyzed a controlled product experiment."),
+        Command(
+            resume=(
+                "I designed seven controlled onboarding experiments and used "
+                "the results to prioritize the product roadmap."
+            )
+        ),
         config=config,
     )
 
     assert result["stop_reason"] == "valid_package_complete"
-    assert result["action_count"] == 4
+    assert result["processed_requirement_ids"] == ["REQ-02", "REQ-03", "REQ-04"]
+    assert [record.accepted for record in result["clarification_records"]] == [
+        True,
+        False,
+        True,
+    ]
+    assert [item.requirement_id for item in result["accepted_clarifications"]] == [
+        "REQ-02",
+        "REQ-04",
+    ]
     assert len(fake_workflow.calls) == 2
-
-
-def test_second_invalid_decision_stops_without_spending_action(monkeypatch) -> None:
-    compiled, config, fake_workflow = _run_agent(
-        monkeypatch,
-        [
-            {
-                "next_action": "GENERATE_PREP_PACKAGE",
-                "reason_summary": "Generate the initial validated package.",
-            },
-            {
-                "next_action": "FINISH",
-                "reason_summary": "Incorrectly finish despite the gap.",
-            },
-            {
-                "next_action": "FINISH",
-                "reason_summary": "Repeat the unauthorized finish decision.",
-            },
-        ],
-        starts_with_gap=True,
+    assert (
+        fake_workflow.calls[0]["interview_round_context"]
+        == (fake_workflow.calls[1]["interview_round_context"])
     )
+    assert fake_workflow.calls[0]["persist_package"] is False
+    assert fake_workflow.calls[0]["candidate_clarifications"] == []
+    assert fake_workflow.calls[1]["persist_package"] is True
+    assert [
+        item.requirement_id
+        for item in fake_workflow.calls[1]["candidate_clarifications"]
+    ] == ["REQ-02", "REQ-04"]
+    assert len(captured) == 4
+    assert set(captured[0]["config"].response_json_schema["properties"]) == {
+        "round_type",
+        "format",
+        "interviewer_roles",
+        "focus",
+        "notes",
+    }
+    assessment_calls = captured[1:]
+    assert "Example JD" not in assessment_calls[0]["contents"]
+    assert "Example resume" not in assessment_calls[0]["contents"]
+    assert set(assessment_calls[0]["config"].response_json_schema["properties"]) == {
+        "target_requirement_id",
+        "is_valid",
+        "relevance_reason",
+        "specificity_reason",
+        "accepted_claim",
+    }
 
+
+def test_agent_without_gaps_still_builds_one_canonical_final_package(
+    monkeypatch,
+) -> None:
+    fake_workflow = _FakeWorkflow(has_gaps=False)
+    fake_client, captured = _assessment_client([])
+    monkeypatch.setattr(agent, "workflow_graph", fake_workflow)
+    monkeypatch.setattr(agent, "get_gemini_client", lambda: fake_client)
+
+    compiled = build_agent_graph()
     result = compiled.invoke(
-        {"job_description": "Example JD", "resume_text": "Example resume"},
-        config=config,
+        {"job_description": "Example JD", "resume_text": "Example resume"}
     )
 
-    assert result["stop_reason"] == "invalid_decision"
-    assert result["authorized_route"] == "invalid"
-    assert result["decision_retry_count"] == 1
-    assert result["action_count"] == 1
-    assert len(fake_workflow.calls) == 1
+    assert result["stop_reason"] == "valid_package_complete"
+    assert result["interview_round_context"] is None
+    assert result.get("processed_requirement_ids", []) == []
+    assert result.get("clarification_records", []) == []
+    assert len(fake_workflow.calls) == 2
+    assert captured == []
 
 
-def test_studio_inputs_are_copy_ready_and_create_the_two_conditions() -> None:
-    fixtures = json.loads(
-        (ROOT / "data" / "lesson5_studio_inputs.json").read_text(encoding="utf-8")
+def test_lesson6_studio_fixture_separates_round_and_gap_scenarios() -> None:
+    fixture = json.loads(
+        (ROOT / "data" / "lesson6_studio_inputs.json").read_text(encoding="utf-8")
     )
-    enough = fixtures["enough_evidence"]
-    gap = fixtures["high_priority_gap"]
+    case = fixture["perfect_resume_analytics_case"]
+    panel = fixture["perfect_resume_cross_functional_panel"]
+    imperfect = fixture["imperfect_profile_with_gaps"]
 
-    assert enough["job_description"] == (ROOT / "data" / "mock_jd.txt").read_text(
+    assert case["job_description"] == panel["job_description"]
+    assert case["resume_text"] == panel["resume_text"]
+    assert case["resume_text"] == (ROOT / "data" / "mock_resume.md").read_text(
         encoding="utf-8"
     )
-    assert enough["resume_text"] == (ROOT / "data" / "mock_resume.md").read_text(
-        encoding="utf-8"
-    )
-    assert gap["job_description"] == enough["job_description"]
-    gap_evidence = extract_candidate_evidence(gap)["candidate_evidence"]
-    assert any(
-        "Six years of professional experience" in item.claim
-        and "four years directly supporting digital product teams" in item.claim
-        for item in gap_evidence
-    )
-    assert "controlled experiments" not in gap["resume_text"]
-    assert "matched-market comparisons" not in gap["resume_text"]
-    assert "A/B testing" not in gap["resume_text"]
-    assert "Strong in SQL, Python" not in gap["resume_text"]
-    assert "BigQuery" not in gap["resume_text"]
-    assert "Used Python and SQL" not in gap["resume_text"]
-    assert "Developed SQL models" not in gap["resume_text"]
-    assert "Built Python notebooks" not in gap["resume_text"]
-    assert "measurable hypotheses, event-tracking" not in gap["resume_text"]
-    assert "pause a proposed notification feature" not in gap["resume_text"]
-    answers = fixtures["clarification_answers"]
-    assert set(answers) == {"REQ-02", "REQ-03", "REQ-04"}
-    assert "complex joins and window functions" in answers["REQ-02"]
-    assert "Python and pandas" in answers["REQ-03"]
-    assert "seven controlled product experiments" in answers["REQ-04"]
+    assert "Strong in SQL, Python" in case["resume_text"]
+    assert "controlled experiments" in case["resume_text"]
+    assert "analytics case" in case["interview_round"]
+    assert "cross-functional panel" in panel["interview_round"]
+    assert imperfect["job_description"] == case["job_description"]
+    assert "difference-in-differences" in imperfect["resume_text"]
+    assert "complex joins" not in imperfect["resume_text"]
+    assert "controlled experiments" not in imperfect["resume_text"]
+    assert fixture["expected_gap_flow"] == {
+        "expected_queue": ["REQ-02", "REQ-03", "REQ-04"],
+        "expected_processed_requirement_ids": ["REQ-02", "REQ-03", "REQ-04"],
+        "expected_accepted_requirement_ids": ["REQ-02", "REQ-04"],
+        "expected_rejected_requirement_ids": ["REQ-03"],
+    }
+    responses = fixture["gap_responses"]
+    assert "complex joins" in responses["REQ-02"]["answer"]
+    assert responses["REQ-02"]["expected_result"] == "accepted"
+    assert responses["REQ-03"] == {
+        "answer": "I have used Python and would like to use it more.",
+        "expected_result": "rejected",
+    }
+    assert "seven controlled" in responses["REQ-04"]["answer"]
+    assert responses["REQ-04"]["expected_result"] == "accepted"

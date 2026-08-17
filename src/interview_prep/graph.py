@@ -12,6 +12,7 @@ from .nodes import (
     extract_requirements,
     generate_questions,
     match_evidence,
+    parse_interview_round,
     report_errors,
     route_after_validation,
     validate_inputs,
@@ -25,6 +26,7 @@ def build_graph():
 
     builder = StateGraph(WorkflowState, input_schema=WorkflowInput)
     builder.add_node("validate_inputs", validate_inputs)
+    builder.add_node("parse_interview_round", parse_interview_round)
     builder.add_node("extract_candidate_evidence", extract_candidate_evidence)
     builder.add_node("extract_requirements", extract_requirements)
     builder.add_node("match_evidence", match_evidence)
@@ -36,7 +38,8 @@ def build_graph():
     builder.add_node("report_errors", report_errors)
 
     builder.add_edge(START, "validate_inputs")
-    builder.add_edge("validate_inputs", "extract_candidate_evidence")
+    builder.add_edge("validate_inputs", "parse_interview_round")
+    builder.add_edge("parse_interview_round", "extract_candidate_evidence")
     builder.add_edge("extract_candidate_evidence", "extract_requirements")
     builder.add_edge("extract_requirements", "match_evidence")
     builder.add_edge("match_evidence", "assess_gaps")

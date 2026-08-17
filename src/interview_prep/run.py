@@ -53,8 +53,8 @@ def _display_event(event: dict[str, Any], final_state: dict[str, Any]) -> None:
 def main() -> None:
     load_environment()
     print(
-        "Running: START → validate inputs → extract → match → assess → "
-        "strategy → questions → validate → package/errors → END\n"
+        "Running: START → validate inputs → parse round → extract → match → "
+        "assess → strategy → questions → validate → package/errors → END\n"
     )
 
     final_state: dict[str, Any] = {}

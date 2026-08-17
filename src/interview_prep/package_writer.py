@@ -19,13 +19,34 @@ def render_candidate_prep(package: PrepPackage) -> str:
     lines = [
         "# Next-Round Interview Prep",
         "",
-        "## Positioning",
-        "",
-        package.interview_strategy.positioning_statement,
-        "",
-        "## What to prioritize",
-        "",
     ]
+    interview_round = package.interview_round
+    if interview_round is not None:
+        lines.extend(["## Target interview round", ""])
+        if interview_round.round_type:
+            lines.append(f"- Round type: {interview_round.round_type}")
+        if interview_round.format:
+            lines.append(f"- Format: {interview_round.format}")
+        if interview_round.interviewer_roles:
+            lines.append(
+                "- Interviewer roles: " + ", ".join(interview_round.interviewer_roles)
+            )
+        if interview_round.focus:
+            lines.append("- Focus: " + ", ".join(interview_round.focus))
+        if interview_round.notes:
+            lines.append(f"- Notes: {interview_round.notes}")
+        lines.append("")
+
+    lines.extend(
+        [
+            "## Positioning",
+            "",
+            package.interview_strategy.positioning_statement,
+            "",
+            "## What to prioritize",
+            "",
+        ]
+    )
 
     for focus_area in package.focus_areas:
         requirement = requirements_by_id[focus_area.requirement_id]

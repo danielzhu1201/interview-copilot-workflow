@@ -17,6 +17,7 @@ from .package_writer import CANDIDATE_PREP_PATH, write_candidate_prep
 from .prompts import (
     build_evidence_matching_prompt,
     build_extraction_prompt,
+    build_interview_round_parsing_prompt,
     build_questions_prompt,
     build_strategy_prompt,
 )
@@ -24,6 +25,7 @@ from .schemas import (
     CandidateEvidence,
     EvidenceMatchList,
     FocusArea,
+    InterviewRound,
     InterviewStrategy,
     MockQuestionList,
     PrepPackage,
@@ -90,8 +92,15 @@ def _append_agent_clarifications(
     )
 
 
+def _interview_round_context(state: WorkflowState) -> InterviewRound | None:
+    """Return an already parsed round context without creating a default."""
+
+    context = state.get("interview_round_context")
+    return InterviewRound.model_validate(context) if context is not None else None
+
+
 def validate_inputs(state: WorkflowState) -> dict[str, Any]:
-    """Validate the two raw source documents."""
+    """Validate source documents and optional freeform round text."""
 
     job_description = state.get("job_description", "")
     resume_text = state.get("resume_text", "")
@@ -101,11 +110,36 @@ def validate_inputs(state: WorkflowState) -> dict[str, Any]:
         errors.append("Job description must not be empty.")
     if not resume_text.strip():
         errors.append("Resume must not be empty.")
+    interview_round = state.get("interview_round", "")
+    if interview_round is not None and not isinstance(interview_round, str):
+        errors.append("Interview round must be freeform text when supplied.")
 
     if errors:
         raise ValueError("Invalid workflow input: " + " ".join(errors))
 
     return {}
+
+
+def parse_interview_round(state: WorkflowState) -> dict[str, Any]:
+    """Parse freeform round text once, or preserve an intentionally empty context."""
+
+    if "interview_round_context" in state:
+        return {"interview_round_context": _interview_round_context(state)}
+
+    interview_round_text = (state.get("interview_round", "") or "").strip()
+    if not interview_round_text:
+        return {"interview_round_context": None}
+
+    client = get_gemini_client()
+    response = client.models.generate_content(
+        model=get_model_name(),
+        contents=build_interview_round_parsing_prompt(interview_round_text),
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_json_schema=InterviewRound.model_json_schema(),
+        ),
+    )
+    return {"interview_round_context": InterviewRound.model_validate(response.parsed)}
 
 
 def extract_candidate_evidence(state: WorkflowState) -> dict[str, Any]:
@@ -117,7 +151,7 @@ def extract_candidate_evidence(state: WorkflowState) -> dict[str, Any]:
             "Invalid workflow input: Resume must contain at least one evidence item."
         )
 
-    # Lesson 5 integration hook; implementation is grouped above.
+    # Lesson 6 admission hook; only accepted clarifications reach this workflow.
     _append_agent_clarifications(state, candidate_evidence)
 
     return {"candidate_evidence": candidate_evidence}
@@ -231,6 +265,7 @@ def build_strategy(state: WorkflowState) -> dict[str, Any]:
             state["requirements"],
             state["evidence_matches"],
             state["focus_areas"],
+            _interview_round_context(state),
         ),
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -251,6 +286,7 @@ def generate_questions(state: WorkflowState) -> dict[str, Any]:
             state["requirements"],
             state["evidence_matches"],
             state["interview_strategy"],
+            _interview_round_context(state),
         ),
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -287,13 +323,15 @@ def assemble_package(state: WorkflowState) -> dict[str, Any]:
     """Assemble and write candidate-facing output only after validation succeeds."""
 
     package = PrepPackage(
+        interview_round=_interview_round_context(state),
         requirements=state["requirements"],
         evidence_matches=state["evidence_matches"],
         focus_areas=state["focus_areas"],
         interview_strategy=state["interview_strategy"],
         mock_questions=state["mock_questions"],
     )
-    write_candidate_prep(package, CANDIDATE_PREP_PATH)
+    if state.get("persist_package", True):
+        write_candidate_prep(package, CANDIDATE_PREP_PATH)
     return {"prep_package": package}
 
 

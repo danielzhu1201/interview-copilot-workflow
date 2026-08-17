@@ -11,6 +11,7 @@ from interview_prep.nodes import (
     extract_candidate_evidence,
     extract_requirements,
     match_evidence,
+    parse_interview_round,
     report_errors,
     route_after_validation,
     validate_inputs,
@@ -105,6 +106,29 @@ def _fake_client(captured: list[dict] | None = None):
             parsed = {"requirements": _requirements_payload()["requirements"]}
         elif properties == {"evidence_matches"}:
             parsed = _evidence_matches_payload()
+        elif properties == {
+            "round_type",
+            "format",
+            "interviewer_roles",
+            "focus",
+            "notes",
+        }:
+            if "cross-functional panel" in kwargs["contents"]:
+                parsed = {
+                    "round_type": "cross-functional panel",
+                    "format": None,
+                    "interviewer_roles": ["Product Manager", "Engineering Lead"],
+                    "focus": ["stakeholder alignment"],
+                    "notes": None,
+                }
+            else:
+                parsed = {
+                    "round_type": "analytics case",
+                    "format": "60-minute live case",
+                    "interviewer_roles": ["Hiring Manager"],
+                    "focus": ["hypothesis testing", "trade-offs"],
+                    "notes": None,
+                }
         elif "top_priorities" in properties:
             parsed = _strategy_payload()
         elif properties == {"mock_questions"}:
@@ -133,7 +157,7 @@ def test_extract_requirements_requests_a_json_schema_requirement_list(
     assert set(config.response_json_schema["properties"]) == {"requirements"}
 
 
-def test_validate_inputs_returns_no_derived_state() -> None:
+def test_validate_inputs_accepts_an_omitted_round_without_derived_state() -> None:
     result = validate_inputs(
         {
             "job_description": "Example job description",
@@ -142,6 +166,44 @@ def test_validate_inputs_returns_no_derived_state() -> None:
     )
 
     assert result == {}
+
+
+def test_empty_round_skips_parsing_model_and_stays_empty(monkeypatch) -> None:
+    def fail_if_called():
+        raise AssertionError("Round parser must not request a model for blank input.")
+
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", fail_if_called)
+
+    assert parse_interview_round({}) == {"interview_round_context": None}
+    assert parse_interview_round({"interview_round": "   "}) == {
+        "interview_round_context": None
+    }
+
+
+def test_freeform_round_requests_the_interview_round_schema(monkeypatch) -> None:
+    captured: list[dict] = []
+    fake_client = _fake_client(captured)
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
+    monkeypatch.setattr("interview_prep.nodes.get_model_name", lambda: "test-model")
+
+    result = parse_interview_round(
+        {
+            "interview_round": (
+                "A 60-minute analytics case with a hiring manager, focused on "
+                "hypothesis testing."
+            )
+        }
+    )
+
+    assert result["interview_round_context"].round_type == "analytics case"
+    assert "INTERVIEW ROUND DESCRIPTION" in captured[0]["contents"]
+    assert set(captured[0]["config"].response_json_schema["properties"]) == {
+        "round_type",
+        "format",
+        "interviewer_roles",
+        "focus",
+        "notes",
+    }
 
 
 def test_display_event_handles_noop_node(capsys) -> None:
@@ -278,13 +340,20 @@ def test_complete_graph_reaches_an_assembled_package_without_live_gemini(
     tmp_path,
 ) -> None:
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
-    fake_client = _fake_client()
+    captured: list[dict] = []
+    fake_client = _fake_client(captured)
     monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
     monkeypatch.setattr("interview_prep.nodes.get_model_name", lambda: "test-model")
     candidate_prep_path = tmp_path / "candidate-prep.md"
     monkeypatch.setattr("interview_prep.nodes.CANDIDATE_PREP_PATH", candidate_prep_path)
 
-    inputs = load_inputs()
+    inputs = {
+        **load_inputs(),
+        "interview_round": (
+            "A 60-minute live analytics case with the hiring manager. Focus on "
+            "hypothesis testing and trade-offs."
+        ),
+    }
     result = graph.invoke(inputs)
 
     assert result["job_description"] == inputs["job_description"]
@@ -293,13 +362,64 @@ def test_complete_graph_reaches_an_assembled_package_without_live_gemini(
     assert result["package_valid"] is True
     assert result["validation_errors"] == []
     assert result["prep_package"] is not None
+    assert result["prep_package"].interview_round.round_type == "analytics case"
     assert len(result["prep_package"].mock_questions) == 8
     markdown = candidate_prep_path.read_text(encoding="utf-8")
     assert "# Next-Round Interview Prep" in markdown
+    assert "## Target interview round" in markdown
+    assert "analytics case" in markdown
     assert "## Positioning" in markdown
     assert "## Practice questions" in markdown
     assert "EXP-01" not in markdown
     assert "source_quote" not in markdown
+    strategy_and_question_prompts = [
+        item["contents"]
+        for item in captured
+        if "TARGET INTERVIEW ROUND" in item["contents"]
+    ]
+    assert len(strategy_and_question_prompts) == 2
+    assert all("analytics case" in prompt for prompt in strategy_and_question_prompts)
+
+
+def test_round_context_changes_prompts_without_changing_evidence(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    captured: list[dict] = []
+    fake_client = _fake_client(captured)
+    monkeypatch.setattr("interview_prep.nodes.get_gemini_client", lambda: fake_client)
+    monkeypatch.setattr("interview_prep.nodes.get_model_name", lambda: "test-model")
+    candidate_prep_path = tmp_path / "candidate-prep.md"
+    monkeypatch.setattr("interview_prep.nodes.CANDIDATE_PREP_PATH", candidate_prep_path)
+    base = load_inputs()
+
+    case = graph.invoke(
+        {
+            **base,
+            "interview_round": ("A live analytics case focused on hypothesis testing."),
+            "persist_package": False,
+        }
+    )
+    panel = graph.invoke(
+        {
+            **base,
+            "interview_round": (
+                "A cross-functional panel focused on stakeholder alignment."
+            ),
+            "persist_package": False,
+        }
+    )
+
+    assert case["candidate_evidence"] == panel["candidate_evidence"]
+    assert case["evidence_matches"] == panel["evidence_matches"]
+    round_prompts = [
+        item["contents"]
+        for item in captured
+        if "TARGET INTERVIEW ROUND" in item["contents"]
+    ]
+    assert any("analytics case" in prompt for prompt in round_prompts)
+    assert any("cross-functional panel" in prompt for prompt in round_prompts)
+    assert not candidate_prep_path.exists()
 
 
 def test_validate_package_rejects_ungrounded_requirements_and_gap_evidence(
@@ -313,6 +433,10 @@ def test_validate_package_rejects_ungrounded_requirements_and_gap_evidence(
         "interview_prep.nodes.CANDIDATE_PREP_PATH", tmp_path / "candidate-prep.md"
     )
     state = graph.invoke(load_inputs())
+    markdown = (tmp_path / "candidate-prep.md").read_text(encoding="utf-8")
+
+    assert state["interview_round_context"] is None
+    assert "## Target interview round" not in markdown
 
     state["requirements"][0] = state["requirements"][0].model_copy(
         update={"source_quote": "Unsupported robotics experience is required."}
@@ -378,6 +502,7 @@ def test_extract_candidate_evidence_appends_clarification_without_resume_edit() 
                     requirement_id="REQ-04",
                     question="What experiment did you design?",
                     answer="I designed a controlled onboarding experiment.",
+                    accepted_claim=("I designed a controlled onboarding experiment."),
                 )
             ],
         }
@@ -389,6 +514,7 @@ def test_extract_candidate_evidence_appends_clarification_without_resume_edit() 
         "EXP-02",
     ]
     assert result["candidate_evidence"][1].source.endswith("REQ-04")
+    assert result["candidate_evidence"][1].claim.startswith("I designed")
 
 
 def test_match_evidence_does_not_use_fixture_for_different_inputs(

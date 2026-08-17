@@ -48,22 +48,26 @@ def resume_markdown_to_evidence(resume_text: str) -> list[CandidateEvidence]:
 
 
 # =============================================================================
-# LESSON 5 AGENT V1 INPUT ADAPTER
+# LESSON 6 AGENT V2 EVIDENCE-ADMISSION ADAPTER
 # =============================================================================
 
 
 def clarifications_to_evidence(
-    clarifications: list[CandidateClarification],
+    clarifications: list[CandidateClarification | dict],
     *,
     starting_index: int,
 ) -> list[CandidateEvidence]:
     """Turn candidate-supplied answers into traceable evidence records."""
 
+    validated = [
+        CandidateClarification.model_validate(clarification)
+        for clarification in clarifications
+    ]
     return [
         CandidateEvidence(
             evidence_id=f"EXP-{starting_index + index:02d}",
-            claim=clarification.answer,
+            claim=clarification.accepted_claim,
             source=f"Candidate clarification / {clarification.requirement_id}",
         )
-        for index, clarification in enumerate(clarifications, start=1)
+        for index, clarification in enumerate(validated, start=1)
     ]

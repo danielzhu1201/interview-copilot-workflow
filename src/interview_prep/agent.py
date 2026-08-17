@@ -1,38 +1,36 @@
-"""Bounded human-in-the-loop agent wrapped around Workflow V1."""
+"""Round-guided, evidence-gated human-in-the-loop agent for Lesson 6."""
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from google.genai import types  # noqa: F401 - used in Lesson 5 Live Build 1
+from google.genai import types
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt  # noqa: F401 - used in Lesson 5 Live Build 2
+from langgraph.types import interrupt
 
 from .graph import graph as workflow_graph
-from .llm import (  # noqa: F401 - used in Lesson 5 Live Build 1
-    get_gemini_client,
-    get_model_name,
+from .llm import get_gemini_client, get_model_name
+from .prompts import (
+    build_clarification_assessment_prompt,
+    build_interview_round_parsing_prompt,
 )
-from .prompts import build_agent_prompt  # noqa: F401 - used in Lesson 5 Live Build 1
 from .schemas import (
-    AgentAction,
-    AgentDecision,  # noqa: F401 - used in Lesson 5 Live Build 1
     AgentInput,
-    AgentObservation,
     AgentState,
-    CandidateClarification,  # noqa: F401 - used in Lesson 5 Live Build 2
-    HighPriorityGap,
+    CandidateClarification,
+    ClarificationAssessment,
+    ClarificationRecord,
+    InterviewRound,
+    JobRequirement,
 )
 
 # =============================================================================
-# LESSON 5 AGENT V1 CONFIGURATION
+# LESSON 6 AGENT V2 CONFIGURATION
 # =============================================================================
 
-DEFAULT_GOAL = "Produce a grounded, validated prep package without inventing evidence."
-MAX_AGENT_ACTIONS = 4
-MAX_CLASSROOM_QUESTIONS = 1
-MAX_DECISION_RETRIES = 1
+MIN_CLARIFICATION_LENGTH = 24
 WORKFLOW_RESULT_FIELDS = (
+    "interview_round_context",
     "candidate_evidence",
     "requirements",
     "evidence_matches",
@@ -45,284 +43,262 @@ WORKFLOW_RESULT_FIELDS = (
 )
 
 
-# =============================================================================
-# OBSERVE AND DECIDE
-# =============================================================================
+def parse_round_context(state: AgentState) -> dict[str, Any]:
+    """Parse optional freeform round text once before either workflow run."""
 
+    raw_interview_round = state.get("interview_round", "")
+    if raw_interview_round is None:
+        raw_interview_round = ""
+    if not isinstance(raw_interview_round, str):
+        raise ValueError("Interview round must be freeform text when supplied.")
+    interview_round_text = raw_interview_round.strip()
+    if not interview_round_text:
+        return {"interview_round_context": None}
 
-def observe_state(state: AgentState) -> dict[str, Any]:
-    """Compress business state into factual, deterministic decision inputs."""
-
-    requirements = {
-        requirement.requirement_id: requirement
-        for requirement in state.get("requirements", [])
-    }
-    high_priority_gaps: list[HighPriorityGap] = []
-    matches = state.get("evidence_matches", [])
-    for match in matches:
-        requirement = requirements.get(match.requirement_id)
-        if (
-            match.coverage == "GAP"
-            and requirement is not None
-            and requirement.importance >= 4
-        ):
-            high_priority_gaps.append(
-                HighPriorityGap(
-                    requirement_id=requirement.requirement_id,
-                    requirement=requirement.requirement,
-                    importance=requirement.importance,
-                    explanation=match.explanation,
-                )
-            )
-    high_priority_gaps.sort(key=lambda gap: (-gap.importance, gap.requirement_id))
-    high_priority_gap_ids = [gap.requirement_id for gap in high_priority_gaps]
-
-    clarifications = state.get("candidate_clarifications", [])
-    asked_requirement_ids = state.get("asked_requirement_ids", [])
-    unasked_gap_ids = [
-        requirement_id
-        for requirement_id in high_priority_gap_ids
-        if requirement_id not in asked_requirement_ids
-    ]
-    steps_remaining = max(
-        0,
-        MAX_AGENT_ACTIONS - state.get("action_count", 0),
-    )
-    package_generated = state.get("package_generated", False)
-    package_valid = state.get("package_valid", False)
-    last_action = state.get("last_action")
-
-    allowed_actions: list[AgentAction]
-    if steps_remaining == 0:
-        allowed_actions = []
-    elif not package_generated:
-        allowed_actions = ["GENERATE_PREP_PACKAGE"]
-    elif last_action == "ASK_USER" and clarifications:
-        allowed_actions = ["GENERATE_PREP_PACKAGE"]
-    elif unasked_gap_ids and len(asked_requirement_ids) < MAX_CLASSROOM_QUESTIONS:
-        allowed_actions = ["ASK_USER"]
-    elif package_valid:
-        allowed_actions = ["FINISH"]
-    else:
-        allowed_actions = ["GENERATE_PREP_PACKAGE"]
-
-    observation = AgentObservation(
-        package_generated=package_generated,
-        package_valid=package_valid,
-        high_priority_gap_ids=high_priority_gap_ids,
-        high_priority_gaps=high_priority_gaps,
-        asked_requirement_ids=asked_requirement_ids,
-        allowed_actions=allowed_actions,
-        latest_clarification=(clarifications[-1].answer if clarifications else None),
-        last_action=last_action,
-        steps_remaining=steps_remaining,
-    )
-    return {
-        "goal": state.get("goal", DEFAULT_GOAL),
-        "observation": observation,
-        "decision_retry_count": 0,
-        "agent_error": None,
-    }
-
-
-def decide_next_action(state: AgentState) -> dict[str, Any]:
-    """Ask Gemini for exactly one schema-validated next action."""
-
-    # === LESSON 5 LIVE BUILD 1: START ===
-    # CLASSROOM RESET:
-    # Delete only the LIVE IMPLEMENTATION block below and temporarily replace it:
-    #     raise NotImplementedError("Complete Live Build 1 in class")
-    #
-    # Implement this logic:
-    # 1. Read goal and observation from state.
-    # 2. Build the bounded prompt, including any prior authorization error.
-    # 3. Request Gemini JSON using AgentDecision.model_json_schema().
-    # 4. Validate response.parsed as AgentDecision.
-    # 5. Return only {"next_decision": decision}; never store the raw response.
-    # --- LIVE IMPLEMENTATION: START ---
-    goal = state.get("goal", DEFAULT_GOAL)
-    observation = state["observation"]
-    prompt = build_agent_prompt(
-        goal,
-        observation,
-        previous_error=state.get("agent_error"),
-    )
     client = get_gemini_client()
     response = client.models.generate_content(
         model=get_model_name(),
-        contents=prompt,
+        contents=build_interview_round_parsing_prompt(interview_round_text),
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
-            response_json_schema=AgentDecision.model_json_schema(),
+            response_json_schema=InterviewRound.model_json_schema(),
         ),
     )
-    decision = AgentDecision.model_validate(response.parsed)
-    return {"next_decision": decision}
-    # --- LIVE IMPLEMENTATION: END ---
-    # === LESSON 5 LIVE BUILD 1: END ===
+    return {"interview_round_context": InterviewRound.model_validate(response.parsed)}
 
 
-# =============================================================================
-# CODE-OWNED AUTHORIZATION AND ROUTING
-# =============================================================================
+def _workflow_input(state: AgentState, *, persist_package: bool) -> dict[str, Any]:
+    """Build the canonical full-context workflow input."""
 
-
-def _invalid(message: str) -> tuple[Literal["invalid"], dict[str, Any]]:
-    return "invalid", {"agent_error": message, "stop_reason": "invalid_decision"}
-
-
-def authorize_decision(
-    state: AgentState,
-) -> tuple[Literal["generate", "ask_user", "finish", "invalid"], dict[str, Any]]:
-    """Apply every code-owned gate before mapping a decision to a capability."""
-
-    decision = state["next_decision"]
-    observation = state["observation"]
-    action = decision.next_action
-
-    if observation.steps_remaining < 1:
-        return _invalid("The four-action agent budget is exhausted.")
-
-    if action not in observation.allowed_actions:
-        allowed = ", ".join(observation.allowed_actions) or "no action"
-        return _invalid(f"{action} is not allowed now; choose {allowed}.")
-
-    update: dict[str, Any] = {
-        "last_action": action,
-        "action_count": state.get("action_count", 0) + 1,
-        "agent_error": None,
-    }
-
-    if action == "GENERATE_PREP_PACKAGE":
-        return "generate", update
-
-    if action == "FINISH":
-        if not observation.package_valid:
-            return _invalid("FINISH requires a valid prep package.")
-        unasked_gap_ids = set(observation.high_priority_gap_ids) - set(
-            observation.asked_requirement_ids
-        )
-        if (
-            unasked_gap_ids
-            and len(observation.asked_requirement_ids) < MAX_CLASSROOM_QUESTIONS
-        ):
-            return _invalid("FINISH requires no eligible unasked high-priority gap.")
-        update["stop_reason"] = "valid_package_complete"
-        return "finish", update
-
-    requirement_id = decision.target_requirement_id
-    if not requirement_id or not decision.question:
-        return _invalid("ASK_USER requires a question and requirement ID.")
-    if requirement_id not in observation.high_priority_gap_ids:
-        return _invalid("ASK_USER must target an eligible high-priority gap.")
-    if requirement_id in observation.asked_requirement_ids:
-        return _invalid("A requirement cannot be asked twice.")
-    if len(observation.asked_requirement_ids) >= MAX_CLASSROOM_QUESTIONS:
-        return _invalid("At most one classroom question is allowed.")
-    return "ask_user", update
-
-
-def validate_and_route(state: AgentState) -> dict[str, Any]:
-    """Authorize the proposed action and store the deterministic route."""
-
-    route, update = authorize_decision(state)
-    if (
-        route == "invalid"
-        and state.get("decision_retry_count", 0) < MAX_DECISION_RETRIES
-    ):
-        return {
-            **update,
-            "authorized_route": "retry",
-            "decision_retry_count": state.get("decision_retry_count", 0) + 1,
-            "stop_reason": None,
-        }
-    return {**update, "authorized_route": route}
-
-
-def route_authorized_action(
-    state: AgentState,
-) -> Literal["generate", "ask_user", "finish", "retry", "invalid"]:
-    """Return only the route previously selected by code-owned validation."""
-
-    return state["authorized_route"]
-
-
-# =============================================================================
-# AUTHORIZED CAPABILITIES
-# =============================================================================
-
-
-def generate_prep_package(state: AgentState) -> dict[str, Any]:
-    """Run the unchanged Workflow V1 and return only its derived business state."""
-
-    workflow_input = {
+    return {
         "job_description": state["job_description"],
         "resume_text": state["resume_text"],
-        "candidate_clarifications": state.get("candidate_clarifications", []),
+        "interview_round": state.get("interview_round", ""),
+        "interview_round_context": state.get("interview_round_context"),
+        "candidate_clarifications": state.get("accepted_clarifications", []),
+        "persist_package": persist_package,
     }
-    result = workflow_graph.invoke(workflow_input)
+
+
+# =============================================================================
+# INITIAL PACKAGE AND DETERMINISTIC GAP QUEUE
+# =============================================================================
+
+
+def generate_initial_package(state: AgentState) -> dict[str, Any]:
+    """Run the full workflow once without writing the preliminary package."""
+
+    result = workflow_graph.invoke(_workflow_input(state, persist_package=False))
     return {
         **{field: result[field] for field in WORKFLOW_RESULT_FIELDS},
-        "package_generated": True,
+        "initial_package_generated": True,
+        "final_package_generated": False,
+        "agent_error": None,
+        "stop_reason": None,
     }
 
 
-def interrupt_and_record(state: AgentState) -> dict[str, Any]:
-    """Pause for one factual answer and record it after same-thread resume."""
+def select_next_gap(state: AgentState) -> JobRequirement | None:
+    """Return the highest-impact GAP that has not already been processed."""
 
-    # === LESSON 5 LIVE BUILD 2: START ===
-    # CLASSROOM RESET:
-    # Delete only the LIVE IMPLEMENTATION block below and temporarily replace it:
-    #     raise NotImplementedError("Complete Live Build 2 in class")
-    #
-    # Implement this logic:
-    # 1. Read the authorized decision and its requirement ID.
-    # 2. Call interrupt() with type, requirement_id, and question.
-    # 3. On same-thread resume, validate the returned factual answer.
-    # 4. Create one CandidateClarification from the question and answer.
-    # 5. Return additive clarification and asked-ID updates.
-    # Keep everything before interrupt() idempotent because the node restarts.
-    # --- LIVE IMPLEMENTATION: START ---
-    decision = state["next_decision"]
-    requirement_id = decision.target_requirement_id
-    question = decision.question
-    if requirement_id is None or question is None:
-        raise ValueError(
-            "Authorized ASK_USER decision requires a question and requirement ID."
-        )
+    # === LESSON 6 LIVE BUILD A: START ===
+    # STUDENT IMPLEMENTATION NOTES:
+    # 1. Index state["requirements"] by requirement_id so each evidence match
+    #    can be resolved back to its JobRequirement.
+    # 2. Convert processed_requirement_ids to a set. A processed GAP was already
+    #    asked once and must never enter the queue again.
+    # 3. From evidence_matches, keep only coverage == "GAP" with a known,
+    #    unprocessed requirement ID.
+    # 4. Sort the JobRequirement values by importance descending, then by
+    #    requirement_id ascending to make ties stable and explainable.
+    # 5. Return the first requirement, or None when no unprocessed GAP remains.
+    raise NotImplementedError(
+        "Complete Lesson 6 Live Build A: select the next unprocessed GAP."
+    )
+    # === LESSON 6 LIVE BUILD A: END ===
 
+
+def observe_gaps(state: AgentState) -> dict[str, Any]:
+    """Expose only the next deterministic queue item to the interaction loop."""
+
+    return {"current_gap": select_next_gap(state)}
+
+
+def route_after_observation(
+    state: AgentState,
+) -> Literal["ask_user", "generate_final", "invalid"]:
+    """Route from code-owned package validity and queue state."""
+
+    if not state.get("package_valid", False):
+        return "invalid"
+    return "ask_user" if state.get("current_gap") is not None else "generate_final"
+
+
+def _question_for(gap: JobRequirement) -> str:
+    return (
+        "Please share one specific example from your experience that demonstrates "
+        f"this requirement: {gap.requirement} Include what you did, the methods or "
+        "tools you used, and the result."
+    )
+
+
+def interrupt_for_gap(state: AgentState) -> dict[str, Any]:
+    """Pause for one answer to the current GAP and resume in the same thread."""
+
+    gap = state.get("current_gap")
+    if gap is None:
+        raise ValueError("ASK_USER requires a current GAP.")
+    question = _question_for(gap)
     answer = interrupt(
         {
             "type": "candidate_evidence_request",
-            "requirement_id": requirement_id,
+            "requirement_id": gap.requirement_id,
             "question": question,
         }
     )
-    clarification = CandidateClarification.model_validate(
-        {
-            "requirement_id": requirement_id,
-            "question": question,
-            "answer": answer,
-        }
+    if not isinstance(answer, str):
+        raise ValueError("Candidate clarification answer must be a string.")
+    return {"current_question": question, "pending_answer": answer.strip()}
+
+
+# =============================================================================
+# SHORT-CONTEXT ASSESSMENT AND CODE-OWNED EVIDENCE GATE
+# =============================================================================
+
+
+def _rejection_reason(
+    answer: str,
+    assessment: ClarificationAssessment,
+    target_requirement_id: str,
+) -> str | None:
+    if len(answer.strip()) < MIN_CLARIFICATION_LENGTH:
+        return f"Answer must contain at least {MIN_CLARIFICATION_LENGTH} characters."
+    if assessment.target_requirement_id != target_requirement_id:
+        return "Assessment targeted a different requirement ID."
+    if not assessment.is_valid:
+        return (
+            "Assessment rejected the answer: "
+            f"{assessment.relevance_reason} {assessment.specificity_reason}"
+        )
+    if not assessment.accepted_claim or not assessment.accepted_claim.strip():
+        return "A valid assessment must provide a non-empty accepted claim."
+    return None
+
+
+def should_accept_clarification(
+    answer: str,
+    assessment: ClarificationAssessment,
+    target_requirement_id: str,
+) -> bool:
+    """Return whether every code-owned evidence-admission gate passes."""
+
+    # === LESSON 6 LIVE BUILD B: START ===
+    # STUDENT IMPLEMENTATION NOTES:
+    # Return one boolean requiring every gate below to pass:
+    # 1. Strip the raw answer and require at least MIN_CLARIFICATION_LENGTH
+    #    characters. This rejects empty and superficial responses in code.
+    # 2. Require assessment.target_requirement_id to equal the requirement the
+    #    agent actually asked about. Model output cannot redirect evidence.
+    # 3. Require assessment.is_valid to be True.
+    # 4. Require assessment.accepted_claim to exist and remain non-empty after
+    #    stripping. Only this grounded claim may become CandidateEvidence.
+    # Do not mutate state or trust one model field without the other gates.
+    raise NotImplementedError(
+        "Complete Lesson 6 Live Build B: apply every evidence-admission gate."
     )
-    return {
-        "candidate_clarifications": [clarification],
-        "asked_requirement_ids": [requirement_id],
+    # === LESSON 6 LIVE BUILD B: END ===
+
+
+def assess_and_record_clarification(state: AgentState) -> dict[str, Any]:
+    """Request short-context advice, apply gates, and append one audit record."""
+
+    gap = state.get("current_gap")
+    question = state.get("current_question")
+    answer = state.get("pending_answer")
+    if gap is None or question is None or answer is None:
+        raise ValueError(
+            "Clarification assessment requires a GAP, question, and answer."
+        )
+
+    client = get_gemini_client()
+    response = client.models.generate_content(
+        model=get_model_name(),
+        contents=build_clarification_assessment_prompt(
+            requirement=gap,
+            question=question,
+            answer=answer,
+        ),
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_json_schema=ClarificationAssessment.model_json_schema(),
+        ),
+    )
+    assessment = ClarificationAssessment.model_validate(response.parsed)
+    accepted = should_accept_clarification(
+        answer,
+        assessment,
+        gap.requirement_id,
+    )
+    rejection_reason = _rejection_reason(answer, assessment, gap.requirement_id)
+    decision_reason = rejection_reason or (
+        "The model assessment and every code-owned admission gate passed."
+    )
+    accepted_claim = assessment.accepted_claim if accepted else None
+    record = ClarificationRecord(
+        requirement_id=gap.requirement_id,
+        question=question,
+        answer=answer,
+        assessment=assessment,
+        accepted=accepted,
+        decision_reason=decision_reason,
+        accepted_claim=accepted_claim,
+    )
+    update: dict[str, Any] = {
+        "processed_requirement_ids": [gap.requirement_id],
+        "clarification_records": [record],
+        "pending_answer": None,
     }
-    # --- LIVE IMPLEMENTATION: END ---
-    # === LESSON 5 LIVE BUILD 2: END ===
+    if accepted and accepted_claim is not None:
+        update["accepted_clarifications"] = [
+            CandidateClarification(
+                requirement_id=gap.requirement_id,
+                question=question,
+                answer=answer,
+                accepted_claim=accepted_claim,
+            )
+        ]
+    return update
 
 
-def finish_agent(_state: AgentState) -> dict[str, Any]:
-    """End after code has authorized FINISH."""
+# =============================================================================
+# FINAL FULL-CONTEXT REGENERATION
+# =============================================================================
 
-    return {}
+
+def generate_final_package(state: AgentState) -> dict[str, Any]:
+    """Run one final workflow after the GAP queue closes and write the package."""
+
+    result = workflow_graph.invoke(_workflow_input(state, persist_package=True))
+    package_valid = result["package_valid"]
+    errors = result["validation_errors"]
+    return {
+        **{field: result[field] for field in WORKFLOW_RESULT_FIELDS},
+        "final_package_generated": True,
+        "stop_reason": (
+            "valid_package_complete" if package_valid else "invalid_final_package"
+        ),
+        "agent_error": None if package_valid else " ".join(errors),
+    }
 
 
-def stop_invalid(_state: AgentState) -> dict[str, Any]:
-    """End without executing a capability after an invalid decision."""
+def stop_invalid(state: AgentState) -> dict[str, Any]:
+    """Stop safely when the initial package cannot pass deterministic validation."""
 
-    return {}
+    errors = state.get("validation_errors", [])
+    return {
+        "stop_reason": "invalid_initial_package",
+        "agent_error": " ".join(errors) or "The initial package is invalid.",
+    }
 
 
 # =============================================================================
@@ -331,34 +307,32 @@ def stop_invalid(_state: AgentState) -> dict[str, Any]:
 
 
 def build_agent_graph(checkpointer: Any = None):
-    """Compile the Lesson 5 observe-decide-authorize resumable loop."""
+    """Compile the round-guided, all-GAP, evidence-gated Agent V2 graph."""
 
     builder = StateGraph(AgentState, input_schema=AgentInput)
-    builder.add_node("observe", observe_state)
-    builder.add_node("decide", decide_next_action)
-    builder.add_node("validate_and_route", validate_and_route)
-    builder.add_node("generate_prep_package", generate_prep_package)
-    builder.add_node("ask_user", interrupt_and_record)
-    builder.add_node("finish", finish_agent)
+    builder.add_node("parse_interview_round", parse_round_context)
+    builder.add_node("generate_initial_package", generate_initial_package)
+    builder.add_node("observe_gaps", observe_gaps)
+    builder.add_node("ask_user", interrupt_for_gap)
+    builder.add_node("assess_clarification", assess_and_record_clarification)
+    builder.add_node("generate_final_package", generate_final_package)
     builder.add_node("invalid", stop_invalid)
 
-    builder.add_edge(START, "observe")
-    builder.add_edge("observe", "decide")
-    builder.add_edge("decide", "validate_and_route")
+    builder.add_edge(START, "parse_interview_round")
+    builder.add_edge("parse_interview_round", "generate_initial_package")
+    builder.add_edge("generate_initial_package", "observe_gaps")
     builder.add_conditional_edges(
-        "validate_and_route",
-        route_authorized_action,
+        "observe_gaps",
+        route_after_observation,
         {
-            "generate": "generate_prep_package",
             "ask_user": "ask_user",
-            "finish": "finish",
-            "retry": "decide",
+            "generate_final": "generate_final_package",
             "invalid": "invalid",
         },
     )
-    builder.add_edge("generate_prep_package", "observe")
-    builder.add_edge("ask_user", "observe")
-    builder.add_edge("finish", END)
+    builder.add_edge("ask_user", "assess_clarification")
+    builder.add_edge("assess_clarification", "observe_gaps")
+    builder.add_edge("generate_final_package", END)
     builder.add_edge("invalid", END)
     return builder.compile(checkpointer=checkpointer)
 
