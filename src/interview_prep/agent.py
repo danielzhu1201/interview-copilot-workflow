@@ -101,21 +101,22 @@ def generate_initial_package(state: AgentState) -> dict[str, Any]:
 def select_next_gap(state: AgentState) -> JobRequirement | None:
     """Return the highest-impact GAP that has not already been processed."""
 
-    # === LESSON 6 LIVE BUILD A: START ===
-    # STUDENT IMPLEMENTATION NOTES:
-    # 1. Index state["requirements"] by requirement_id so each evidence match
-    #    can be resolved back to its JobRequirement.
-    # 2. Convert processed_requirement_ids to a set. A processed GAP was already
-    #    asked once and must never enter the queue again.
-    # 3. From evidence_matches, keep only coverage == "GAP" with a known,
-    #    unprocessed requirement ID.
-    # 4. Sort the JobRequirement values by importance descending, then by
-    #    requirement_id ascending to make ties stable and explainable.
-    # 5. Return the first requirement, or None when no unprocessed GAP remains.
-    raise NotImplementedError(
-        "Complete Lesson 6 Live Build A: select the next unprocessed GAP."
+    requirements_by_id = {
+        requirement.requirement_id: requirement
+        for requirement in state.get("requirements", [])
+    }
+    processed_requirement_ids = set(state.get("processed_requirement_ids", []))
+    gaps = [
+        requirements_by_id[match.requirement_id]
+        for match in state.get("evidence_matches", [])
+        if match.coverage == "GAP"
+        and match.requirement_id in requirements_by_id
+        and match.requirement_id not in processed_requirement_ids
+    ]
+    gaps.sort(
+        key=lambda requirement: (-requirement.importance, requirement.requirement_id)
     )
-    # === LESSON 6 LIVE BUILD A: END ===
+    return gaps[0] if gaps else None
 
 
 def observe_gaps(state: AgentState) -> dict[str, Any]:
@@ -192,21 +193,12 @@ def should_accept_clarification(
 ) -> bool:
     """Return whether every code-owned evidence-admission gate passes."""
 
-    # === LESSON 6 LIVE BUILD B: START ===
-    # STUDENT IMPLEMENTATION NOTES:
-    # Return one boolean requiring every gate below to pass:
-    # 1. Strip the raw answer and require at least MIN_CLARIFICATION_LENGTH
-    #    characters. This rejects empty and superficial responses in code.
-    # 2. Require assessment.target_requirement_id to equal the requirement the
-    #    agent actually asked about. Model output cannot redirect evidence.
-    # 3. Require assessment.is_valid to be True.
-    # 4. Require assessment.accepted_claim to exist and remain non-empty after
-    #    stripping. Only this grounded claim may become CandidateEvidence.
-    # Do not mutate state or trust one model field without the other gates.
-    raise NotImplementedError(
-        "Complete Lesson 6 Live Build B: apply every evidence-admission gate."
+    return (
+        len(answer.strip()) >= MIN_CLARIFICATION_LENGTH
+        and assessment.target_requirement_id == target_requirement_id
+        and assessment.is_valid
+        and bool(assessment.accepted_claim and assessment.accepted_claim.strip())
     )
-    # === LESSON 6 LIVE BUILD B: END ===
 
 
 def assess_and_record_clarification(state: AgentState) -> dict[str, Any]:
