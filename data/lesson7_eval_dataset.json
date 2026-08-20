@@ -1,0 +1,318 @@
+{
+  "dataset_name": "interview-copilot-lesson-7",
+  "trajectory_templates": {
+    "no-gaps": [
+      [
+        "__start__",
+        "parse_interview_round",
+        "generate_initial_package",
+        "generate_initial_package:__start__",
+        "generate_initial_package:validate_inputs",
+        "generate_initial_package:parse_interview_round",
+        "generate_initial_package:extract_candidate_evidence",
+        "generate_initial_package:extract_requirements",
+        "generate_initial_package:match_evidence",
+        "generate_initial_package:assess_gaps",
+        "generate_initial_package:build_strategy",
+        "generate_initial_package:generate_questions",
+        "generate_initial_package:validate_package",
+        "generate_initial_package:assemble_package"
+      ],
+      [
+        "observe_gaps",
+        "generate_final_package",
+        "generate_final_package:__start__",
+        "generate_final_package:validate_inputs",
+        "generate_final_package:parse_interview_round",
+        "generate_final_package:extract_candidate_evidence",
+        "generate_final_package:extract_requirements",
+        "generate_final_package:match_evidence",
+        "generate_final_package:assess_gaps",
+        "generate_final_package:build_strategy",
+        "generate_final_package:generate_questions",
+        "generate_final_package:validate_package",
+        "generate_final_package:assemble_package"
+      ],
+      []
+    ],
+    "three-gaps": [
+      [
+        "__start__",
+        "parse_interview_round",
+        "generate_initial_package",
+        "generate_initial_package:__start__",
+        "generate_initial_package:validate_inputs",
+        "generate_initial_package:parse_interview_round",
+        "generate_initial_package:extract_candidate_evidence",
+        "generate_initial_package:extract_requirements",
+        "generate_initial_package:match_evidence",
+        "generate_initial_package:assess_gaps",
+        "generate_initial_package:build_strategy",
+        "generate_initial_package:generate_questions",
+        "generate_initial_package:validate_package",
+        "generate_initial_package:assemble_package"
+      ],
+      ["observe_gaps", "ask_user", "__interrupt__"],
+      ["assess_clarification", "observe_gaps", "ask_user", "__interrupt__"],
+      ["assess_clarification", "observe_gaps", "ask_user", "__interrupt__"],
+      [
+        "assess_clarification",
+        "observe_gaps",
+        "generate_final_package",
+        "generate_final_package:__start__",
+        "generate_final_package:validate_inputs",
+        "generate_final_package:parse_interview_round",
+        "generate_final_package:extract_candidate_evidence",
+        "generate_final_package:extract_requirements",
+        "generate_final_package:match_evidence",
+        "generate_final_package:assess_gaps",
+        "generate_final_package:build_strategy",
+        "generate_final_package:generate_questions",
+        "generate_final_package:validate_package",
+        "generate_final_package:assemble_package"
+      ],
+      []
+    ]
+  },
+  "scenarios": [
+    {
+      "scenario_id": "complete-profile-no-round",
+      "description": "A complete profile without round context finishes without an interrupt.",
+      "suites": ["baseline", "baseline-live"],
+      "profile": "complete",
+      "runs": [
+        {
+          "run_id": "general",
+          "interview_round": "",
+          "answers_by_requirement": {},
+          "assessments_by_requirement": {}
+        }
+      ],
+      "reference": {
+        "runs": {
+          "general": {
+            "expected_trajectory": "no-gaps",
+            "expected_interrupt_count": 0,
+            "expected_processed_ids": [],
+            "expected_accepted_ids": [],
+            "expected_rejected_ids": [],
+            "expected_remaining_gap_ids": [],
+            "expected_package_valid": true,
+            "expected_stop_reason": "valid_package_complete"
+          }
+        },
+        "round_guidance_changed": null
+      }
+    },
+    {
+      "scenario_id": "round-guidance-comparison",
+      "description": "The same complete profile receives different guidance for an analytics case and a cross-functional panel.",
+      "suites": ["baseline", "baseline-live"],
+      "profile": "complete",
+      "runs": [
+        {
+          "run_id": "analytics-case",
+          "interview_round": "A 60-minute live analytics case with the hiring manager, focused on hypothesis testing and trade-offs.",
+          "answers_by_requirement": {},
+          "assessments_by_requirement": {}
+        },
+        {
+          "run_id": "cross-functional-panel",
+          "interview_round": "A cross-functional panel with product and engineering leaders, focused on stakeholder alignment and concise recommendations.",
+          "answers_by_requirement": {},
+          "assessments_by_requirement": {}
+        }
+      ],
+      "reference": {
+        "runs": {
+          "analytics-case": {
+            "expected_trajectory": "no-gaps",
+            "expected_interrupt_count": 0,
+            "expected_processed_ids": [],
+            "expected_accepted_ids": [],
+            "expected_rejected_ids": [],
+            "expected_remaining_gap_ids": [],
+            "expected_package_valid": true,
+            "expected_stop_reason": "valid_package_complete"
+          },
+          "cross-functional-panel": {
+            "expected_trajectory": "no-gaps",
+            "expected_interrupt_count": 0,
+            "expected_processed_ids": [],
+            "expected_accepted_ids": [],
+            "expected_rejected_ids": [],
+            "expected_remaining_gap_ids": [],
+            "expected_package_valid": true,
+            "expected_stop_reason": "valid_package_complete"
+          }
+        },
+        "round_guidance_changed": true
+      }
+    },
+    {
+      "scenario_id": "mixed-clarifications",
+      "description": "Three GAP answers are accepted, rejected, and accepted in deterministic priority order.",
+      "suites": ["baseline", "baseline-live"],
+      "profile": "imperfect",
+      "runs": [
+        {
+          "run_id": "mixed",
+          "interview_round": "A 45-minute hiring-manager discussion focused on technical depth, examples from past work, and honest treatment of missing experience.",
+          "answers_by_requirement": {
+            "REQ-02": "I regularly wrote advanced SQL in BigQuery, including complex joins and window functions, and optimized slow queries by reviewing execution plans and reducing repeated scans.",
+            "REQ-03": "I have used Python and would like to use it more.",
+            "REQ-04": "I designed and analyzed seven controlled product experiments at Meridian Works. One onboarding experiment increased team activation by 8.4% and informed the next-quarter roadmap."
+          },
+          "assessments_by_requirement": {
+            "REQ-02": {
+              "target_requirement_id": "REQ-02",
+              "is_valid": true,
+              "relevance_reason": "The answer directly addresses advanced SQL experience.",
+              "specificity_reason": "It names BigQuery, joins, windows, and optimization work.",
+              "accepted_claim": "I used advanced SQL in BigQuery with complex joins, window functions, and query optimization."
+            },
+            "REQ-03": {
+              "target_requirement_id": "REQ-03",
+              "is_valid": false,
+              "relevance_reason": "The answer mentions Python but does not describe concrete work.",
+              "specificity_reason": "It provides no action, method, or result.",
+              "accepted_claim": null
+            },
+            "REQ-04": {
+              "target_requirement_id": "REQ-04",
+              "is_valid": true,
+              "relevance_reason": "The answer directly describes experiment design and analysis.",
+              "specificity_reason": "It gives a count, measured result, and product consequence.",
+              "accepted_claim": "I designed and analyzed seven controlled experiments, including one that increased activation by 8.4%."
+            }
+          }
+        }
+      ],
+      "reference": {
+        "runs": {
+          "mixed": {
+            "expected_trajectory": "three-gaps",
+            "expected_interrupt_count": 3,
+            "expected_processed_ids": ["REQ-02", "REQ-03", "REQ-04"],
+            "expected_accepted_ids": ["REQ-02", "REQ-04"],
+            "expected_rejected_ids": ["REQ-03"],
+            "expected_remaining_gap_ids": ["REQ-03"],
+            "expected_package_valid": true,
+            "expected_stop_reason": "valid_package_complete"
+          }
+        },
+        "round_guidance_changed": null
+      }
+    },
+    {
+      "scenario_id": "all-clarifications-rejected",
+      "description": "Every GAP is processed once even when every answer is rejected.",
+      "suites": ["baseline", "baseline-live"],
+      "profile": "imperfect",
+      "runs": [
+        {
+          "run_id": "all-rejected",
+          "interview_round": "A hiring-manager conversation focused on technical depth and honest evidence gaps.",
+          "answers_by_requirement": {
+            "REQ-02": "I am interested in learning more advanced SQL techniques in a future role.",
+            "REQ-03": "I have read about Python analysis libraries but cannot provide a work example.",
+            "REQ-04": "I understand why experiments matter, although I have not designed one myself."
+          },
+          "assessments_by_requirement": {
+            "REQ-02": {
+              "target_requirement_id": "REQ-02",
+              "is_valid": false,
+              "relevance_reason": "The answer describes future interest rather than past experience.",
+              "specificity_reason": "It contains no concrete action or result.",
+              "accepted_claim": null
+            },
+            "REQ-03": {
+              "target_requirement_id": "REQ-03",
+              "is_valid": false,
+              "relevance_reason": "Reading about Python does not establish candidate experience.",
+              "specificity_reason": "The answer explicitly lacks a work example.",
+              "accepted_claim": null
+            },
+            "REQ-04": {
+              "target_requirement_id": "REQ-04",
+              "is_valid": false,
+              "relevance_reason": "The answer explicitly says the candidate has not designed an experiment.",
+              "specificity_reason": "It contains no experiment action or result.",
+              "accepted_claim": null
+            }
+          }
+        }
+      ],
+      "reference": {
+        "runs": {
+          "all-rejected": {
+            "expected_trajectory": "three-gaps",
+            "expected_interrupt_count": 3,
+            "expected_processed_ids": ["REQ-02", "REQ-03", "REQ-04"],
+            "expected_accepted_ids": [],
+            "expected_rejected_ids": ["REQ-02", "REQ-03", "REQ-04"],
+            "expected_remaining_gap_ids": ["REQ-02", "REQ-03", "REQ-04"],
+            "expected_package_valid": true,
+            "expected_stop_reason": "valid_package_complete"
+          }
+        },
+        "round_guidance_changed": null
+      }
+    },
+    {
+      "scenario_id": "wrong-target-assessment",
+      "description": "A valid-looking assessment for the wrong requirement is rejected and retained in the audit trail.",
+      "suites": ["baseline"],
+      "profile": "imperfect",
+      "runs": [
+        {
+          "run_id": "wrong-target",
+          "interview_round": "A hiring-manager discussion focused on technical evidence and careful validation.",
+          "answers_by_requirement": {
+            "REQ-02": "I regularly wrote advanced SQL in BigQuery using complex joins and window functions for product reporting.",
+            "REQ-03": "I built Python notebooks for cohort analysis and automated recurring reporting checks.",
+            "REQ-04": "I designed a controlled onboarding experiment and used the measured result to prioritize the roadmap."
+          },
+          "assessments_by_requirement": {
+            "REQ-02": {
+              "target_requirement_id": "REQ-03",
+              "is_valid": true,
+              "relevance_reason": "The assessment claims the answer supports a technical requirement.",
+              "specificity_reason": "The answer names concrete SQL work and tools.",
+              "accepted_claim": "I used advanced SQL in BigQuery with complex joins and window functions."
+            },
+            "REQ-03": {
+              "target_requirement_id": "REQ-03",
+              "is_valid": true,
+              "relevance_reason": "The answer directly addresses Python experience.",
+              "specificity_reason": "It names notebooks, cohort analysis, and automated checks.",
+              "accepted_claim": "I used Python notebooks for cohort analysis and automated reporting checks."
+            },
+            "REQ-04": {
+              "target_requirement_id": "REQ-04",
+              "is_valid": true,
+              "relevance_reason": "The answer directly addresses experiment design.",
+              "specificity_reason": "It describes the experiment and its decision impact.",
+              "accepted_claim": "I designed a controlled onboarding experiment that informed roadmap prioritization."
+            }
+          }
+        }
+      ],
+      "reference": {
+        "runs": {
+          "wrong-target": {
+            "expected_trajectory": "three-gaps",
+            "expected_interrupt_count": 3,
+            "expected_processed_ids": ["REQ-02", "REQ-03", "REQ-04"],
+            "expected_accepted_ids": ["REQ-03", "REQ-04"],
+            "expected_rejected_ids": ["REQ-02"],
+            "expected_remaining_gap_ids": ["REQ-02"],
+            "expected_package_valid": true,
+            "expected_stop_reason": "valid_package_complete"
+          }
+        },
+        "round_guidance_changed": null
+      }
+    }
+  ]
+}

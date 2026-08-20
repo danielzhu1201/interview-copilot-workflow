@@ -147,6 +147,49 @@ empty queue       → one final workflow run
 Each `gap_responses` item declares its `expected_result`. `expected_gap_flow`
 declares the expected queue and final processed, accepted, and rejected IDs.
 
+## Lesson 7 evaluation suites
+
+Lesson 7 adds behavior-level regression evidence without changing the working
+agent. The `baseline` suite runs five deterministic scenarios through the real
+LangGraph graph, checkpoints, interrupts, resumes, reducers, inner workflow,
+and package validator. Only Gemini responses are replaced by schema-aware
+fixtures, so the suite is fast and repeatable for the in-class regression.
+
+Run it locally without credentials:
+
+```bash
+uv run python -m evals.run --suite baseline --local
+```
+
+With `LANGSMITH_API_KEY` configured, save the green experiment:
+
+```bash
+uv run python -m evals.run \
+  --suite baseline \
+  --experiment lesson7-green-baseline
+```
+
+The `baseline-live` suite runs four representative cases through the complete
+Gemini-backed workflow. It disables the evidence-match fixture fallback for the
+experiment, so a successful result is genuinely model-backed. It requires both
+Gemini and LangSmith credentials:
+
+```bash
+uv run python -m evals.run \
+  --suite baseline-live \
+  --experiment lesson7-live-baseline
+```
+
+Both suites score graph trajectory, all-GAP processing, evidence admission,
+terminal validity, and round-specific guidance. The live suite also reports
+whether the result was model-backed. Reference outputs contain stable behavior
+such as IDs, node steps, and terminal state rather than generated prose.
+
+The committed code remains green. In class, add the one-question early return
+to `select_next_gap`, run the unchanged tests and `baseline` suite, inspect the
+red state and trajectory metrics, then remove the edit and run the restored
+experiment. See `LESSON_7.md` for the exact sequence and expected results.
+
 ### Classroom live-build reset
 
 The student implementation intentionally resets both slide-aligned functions:
@@ -172,9 +215,8 @@ uv run ruff format --check .
 
 The tests replace Gemini with schema-aware fake responses and exercise the full
 input-to-package path, all-GAP queue, short-context assessment, evidence gate,
-audit trail, and exactly-one final regeneration behavior. In the committed
-student version, tests that reach either live-build function fail intentionally
-until its implementation is completed.
+audit trail, exactly-one final regeneration behavior, and Lesson 7 regression
+contracts.
 
 ## LangSmith tracing
 
@@ -203,3 +245,5 @@ and candidate evidence after startup.
 - Google Gen AI Python SDK: https://googleapis.github.io/python-genai/
 - LangGraph Graph API: https://docs.langchain.com/oss/python/langgraph/graph-api
 - LangSmith Gemini tracing: https://docs.langchain.com/langsmith/trace-with-google-gemini
+- LangSmith evaluation: https://docs.langchain.com/langsmith/evaluate-llm-application
+- AgentEvals graph trajectories: https://github.com/langchain-ai/agentevals#graph-trajectory
